@@ -1,0 +1,29 @@
+services:
+  open_manipulator:
+    container_name: open_manipulator
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: robotis/open-manipulator:5.1.1
+    tty: true
+    restart: always
+    cap_add:
+      - SYS_NICE
+    ulimits:
+      rtprio: 99
+      rttime: -1
+      memlock: 8428281856
+    network_mode: host
+    ipc: host
+    environment:
+     - DISPLAY=${DISPLAY}
+     - QT_X11_NO_MITSHM=1
+    volumes:
+      - /dev:/dev
+      - /dev/shm:/dev/shm
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /tmp/.docker.xauth:/tmp/.docker.xauth:rw
+      - ./workspace:/workspace
+      - ../:/root/ros2_ws/src/open_manipulator/
+      - /var/run/robotis/agent_sockets/open_manipulator:/var/run/agent
+    privileged: true
