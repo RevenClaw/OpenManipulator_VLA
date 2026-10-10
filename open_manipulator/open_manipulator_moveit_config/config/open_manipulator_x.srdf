@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot name="open_manipulator_x">
+    <group name="arm">
+        <joint name="joint1"/>
+        <joint name="joint2"/>
+        <joint name="joint3"/>
+        <joint name="joint4"/>
+        <joint name="end_effector_joint"/>
+    </group>
+    <group name="gripper">
+        <joint name="gripper_left_joint"/>
+        <joint name="gripper_right_joint"/>
+    </group>
+    <group_state name="init" group="arm">
+        <joint name="joint1" value="0.6090"/>
+        <joint name="joint2" value="-1.3806"/>
+        <joint name="joint3" value="0.4955"/>
+        <joint name="joint4" value="-0.8437"/>
+    </group_state>
+    <group_state name="home" group="arm">
+        <joint name="joint1" value="0.6090"/>
+        <joint name="joint2" value="-1.3806"/>
+        <joint name="joint3" value="0.4955"/>
+        <joint name="joint4" value="-0.8437"/>
+    </group_state>
+    <group_state name="open" group="gripper">
+        <joint name="gripper_left_joint" value="0.019"/>
+    </group_state>
+    <group_state name="close" group="gripper">
+        <joint name="gripper_left_joint" value="-0.01"/>
+    </group_state>
+    <end_effector name="end_effector" parent_link="end_effector_link" group="arm"/>
+    <disable_collisions link1="gripper_left_link" link2="gripper_right_link" reason="Never"/>
+    <disable_collisions link1="gripper_left_link" link2="link4" reason="Never"/>
+    <disable_collisions link1="gripper_left_link" link2="link5" reason="Adjacent"/>
+    <disable_collisions link1="gripper_right_link" link2="link4" reason="Never"/>
+    <disable_collisions link1="gripper_right_link" link2="link5" reason="Adjacent"/>
+    <disable_collisions link1="link1" link2="link2" reason="Adjacent"/>
+    <disable_collisions link1="link1" link2="link3" reason="Never"/>
+    <disable_collisions link1="link2" link2="link3" reason="Adjacent"/>
+    <disable_collisions link1="link3" link2="link4" reason="Adjacent"/>
+    <disable_collisions link1="link4" link2="link5" reason="Adjacent"/>
+</robot>

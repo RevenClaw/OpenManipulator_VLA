@@ -19,6 +19,7 @@
 import os
 from pathlib import Path
 
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
@@ -62,8 +63,8 @@ def generate_launch_description():
     moveit_config = (
         MoveItConfigsBuilder(
             robot_name='open_manipulator_x', package_name='open_manipulator_moveit_config')
-        .robot_description_semantic(
-            str(Path('config') / 'open_manipulator_x' / 'open_manipulator_x.srdf'))
+        .robot_description(file_path=str(Path('config') / 'open_manipulator_x.urdf'))
+        .robot_description_semantic(str(Path('config') / 'open_manipulator_x.srdf'))
         .joint_limits(str(Path('config') / 'open_manipulator_x' / 'joint_limits.yaml'))
         .trajectory_execution(
             str(Path('config') / 'open_manipulator_x' / 'moveit_controllers.yaml'))

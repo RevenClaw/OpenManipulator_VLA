@@ -8,10 +8,10 @@ joint_trajectory_executor:
     step_names:
     - home
     home:
-    - 0.1227
-    - -1.8316
-    - -0.1197
-    - 0.6335
+    - 0.6090
+    - -1.3806
+    - 0.4955
+    - -0.8437
     duration: 3.0
     epsilon: 0.01
     action_topic: /arm_controller/follow_joint_trajectory

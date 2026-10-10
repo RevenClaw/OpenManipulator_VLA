@@ -46,7 +46,8 @@ class InteractiveHomingNode(Node):
         super().__init__('interactive_homing_node')
 
         self.joint_names = ['joint1', 'joint2', 'joint3', 'joint4']
-        self.moveit_default_home = [0.0, -1.0, 0.7, 0.3]
+        self.moveit_default_home = [0.6090, -1.3806, 0.4955, -0.8437]
+        self.min_stress_exit_position = [0.6090, -1.8484, 0.6949, -0.3436]
         self.session_home_position = None
         self.current_positions = None
         self.lock = threading.Lock()
@@ -283,19 +284,20 @@ def main(args=None):
     while node.current_positions is None:
         time.sleep(0.2)
 
+    print('Disabling motor torque to allow moving the arm freely by hand...')
+    node.set_torque(enable=False)
+
     menu_prompt = (
         "\nSelect Homing Mode for this Session:\n"
         "  [1] Custom Home Position (Move arm by hand & press ENTER)\n"
-        "  [2] MoveIt Default Home Position [0.0, -1.0, 0.7, 0.3]\n\n"
+        "  [2] MoveIt Default Home Position [0.6090, -1.3806, 0.4955, -0.8437]\n\n"
         "Enter choice (1 or 2): "
     )
 
     choice = read_tty_choice(menu_prompt, valid_choices=('1', '2'))
 
     if choice == '1':
-        print('\n[Option 1 Selected] Disabling motor torque for manual positioning...')
-        node.set_torque(enable=False)
-
+        print('\n[Option 1 Selected] Motor torque disabled. Position arm by hand.')
         wait_for_enter_keypress()
 
         with node.lock:
@@ -309,18 +311,19 @@ def main(args=None):
         node.sync_controller_goal_to_current(node.session_home_position)
 
     elif choice == '2':
-        print('\n[Option 2 Selected] Smoothly moving to MoveIt Home Position [0.0, -1.0, 0.7, 0.3]...')
+        print('\n[Option 2 Selected] Smoothly moving to MoveIt Home Position [0.6090, -1.3806, 0.4955, -0.8437]...')
         node.session_home_position = list(node.moveit_default_home)
         print('Enabling motor torque...')
         node.set_torque(enable=True)
         node.send_safe_trajectory(node.session_home_position, duration_sec=5.0)
 
     session_pos_str = ', '.join([f'{p:+.4f}' for p in node.session_home_position])
+    exit_pos_str = ', '.join([f'{p:+.4f}' for p in node.min_stress_exit_position])
 
     print('\n' + '=' * 65)
     print(f'🔒 TORQUE LOCKED! Session Home Position: [{session_pos_str}]')
     print('=' * 65)
-    print(f"👉 Press 'z' in this terminal at ANY TIME to return to Session Home Position [{session_pos_str}] and QUIT.")
+    print(f"👉 Press 'z' in this terminal at ANY TIME to return to Minimum Stress Exit Position [{exit_pos_str}] and QUIT.")
     print("   (Or run in another terminal: ros2 service call /go_home_and_quit std_srvs/srv/Trigger)")
     print('=' * 65 + '\n')
 
@@ -330,12 +333,12 @@ def main(args=None):
     while not node.quit_trigger_received:
         time.sleep(0.1)
 
-    # Step 3: Return to the Session Home Position & Quit safely
-    print(f'\n🏠 RETURNING TO SESSION HOME POSITION: [{session_pos_str}]...')
-    success = node.send_safe_trajectory(node.session_home_position, duration_sec=5.0)
+    # Step 3: Return to the Minimum Stress Exit Position & Quit safely
+    print(f'\n🏠 RETURNING TO MINIMUM STRESS EXIT POSITION: [{exit_pos_str}]...')
+    success = node.send_safe_trajectory(node.min_stress_exit_position, duration_sec=5.0)
 
     if success:
-        print('✅ Safely returned to Session Home Position!')
+        print('✅ Safely returned to Minimum Stress Position!')
     else:
         print('⚠️ Trajectory completed or timed out.')
 

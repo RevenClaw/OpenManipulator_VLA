@@ -1,138 +1,101 @@
-# OpenManipulator-X Controller Stack & Custom Package Summary
+# OpenManipulator-X Comprehensive Changes & Architectural Summary
 
-## Executive Summary
-This document provides a comprehensive summary of the architecture analysis, modifications, and new ROS 2 custom control features developed for the **OpenManipulator-X** robotic arm.
-
-All custom control logic has been engineered into a dedicated, isolated package named **`custom_package`** inside the main `open_manipulator` repository. No modifications were made to the external controller stack repositories (`DynamixelSDK`, `dynamixel_hardware_interface`, `dynamixel_interfaces`).
+This document provides a complete, itemized technical record of all modifications, custom packages, configurations, node logic, and documentation added to the OpenManipulator-X workspace.
 
 ---
 
-## 🏗️ Repository & Architecture Overview
+## 🏗️ 1. Architectural Design & Constraints
 
-The software stack operates within a ROS 2 Jazzy Docker container (`ros:jazzy-ros-base`) managed via s6-overlay and Zenoh RMW (`rmw_zenoh_cpp`):
-
-```
- +-----------------------------------------------------------------------------------------+
- |                                  Docker Container                                       |
- |                       (open_manipulator/docker/Dockerfile)                               |
- |                                                                                         |
- |  +-----------------------------------------------------------------------------------+  |
- |  |                            open_manipulator                                       |  |
- |  |  - open_manipulator_bringup (Launch scripts & configs)                            |  |
- |  |  - open_manipulator_description (URDF, Xacro, ros2_control specs)                 |  |
- |  |  - open_manipulator_moveit_config (MoveIt 2 motion planning & kinematics)       |  |
- |  |  - open_manipulator_teleop / gui / playground / collision                           |  |
- |  |  - custom_package [NEW] (Interactive homing, manual teaching, session manager)    |  |
- |  +----------------------------------------+------------------------------------------+  |
- |                                           |                                             |
- |                                      ros2_control                                       |
- |                                           v                                             |
- |  +-----------------------------------------------------------------------------------+  |
- |  |                       dynamixel_hardware_interface                                |  |
- |  |  - DynamixelHardware C++ Plugin (hardware_interface::SystemInterface)             |  |
- |  |  - Services: set_dxl_torque, reboot_dxl, get_dxl_data, set_dxl_data                  |  |
- |  +-------------------+---------------------------------------+-----------------------+  |
- |                      |                                       |                          |
- |                      v                                       v                          |
- |  +--------------------------------------+   +----------------------------------------+  |
- |  |         dynamixel_interfaces         |   |              DynamixelSDK              |  |
- |  |  - DynamixelState.msg                |   |  - Low-level serial communication      |  |
- |  |  - GetDataFromDxl / SetDataToDxl srv |   |  - Protocol 1.0 / 2.0 packet handler   |  |
- |  +--------------------------------------+   +-------------------+--------------------+  |
- +-----------------------------------------------------------------|-----------------------+
-                                                                   |
-                                                            /dev/ttyUSB0 (U2D2)
-                                                                   v
-                                                       [ OpenManipulator-X ]
-```
+* **Strict Isolation Policy**: The 3 external driver repositories (`DynamixelSDK`, `dynamixel_hardware_interface`, `dynamixel_interfaces`) were kept **100% pristine and unmodified**.
+* **Standalone Package (`custom_package`)**: All new nodes, homing menus, logging scripts, and custom launch files were isolated inside a dedicated ROS 2 package at `open_manipulator/custom_package/`.
+* **Zero-Jerk Homing & Minimum-Stress Exit**: Enforced a 2-stage smooth trajectory system to prevent current overload shutdowns on Joint 2, coupled with an automatic minimum-stress exit routine on `z` keypress.
 
 ---
 
-## 📦 Custom Package (`custom_package`)
+## 📁 2. Detailed File-by-File Changes
 
-Located at: `open_manipulator/custom_package/`
-
-### Directory Structure
-```
-open_manipulator/
-└── custom_package/
-    ├── package.xml
-    ├── setup.py
-    ├── setup.cfg
-    ├── resource/
-    │   └── custom_package
-    ├── custom_package/
-    │   ├── __init__.py
-    │   ├── record_home_position.py
-    │   └── interactive_homing_node.py
-    ├── config/
-    │   └── configured_home_position.yaml
-    └── launch/
-        ├── open_manipulator_x_custom.launch.py
-        └── open_manipulator_x_interactive.launch.py
-```
-
-### Container Mounting Rationale
-The Docker compose setup ([`docker-compose.yml`](file:///home/vla/VLA/openManipulator/open_manipulator/docker/docker-compose.yml)) mounts host path `../` to `/root/ros2_ws/src/open_manipulator/`. Therefore, any package placed inside `open_manipulator/` on the host machine automatically appears inside `/root/ros2_ws/src/open_manipulator/` inside the running container.
+### A. New Custom Package (`open_manipulator/custom_package/`)
+1. **[`package.xml`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/package.xml)** & **[`setup.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/setup.py)**:
+   * Created standard Python ROS 2 package configuration.
+   * Registered 3 executable entry points: `record_home_position`, `interactive_homing_node`, and `log_joint_states`.
+2. **[`custom_package/interactive_homing_node.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/custom_package/interactive_homing_node.py)**:
+   * **Instant Torque Unlock**: Automatically invokes `/dynamixel_hardware_interface/set_dxl_torque(enable=false)` on node startup so the user can position the physical arm freely by hand.
+   * **Option 1 (Manual Hand Pose)**: Prompts user to position arm and press `ENTER`. Invokes `sync_controller_goal_to_current()` to sync the active controller goal to the current pose before enabling torque, locking motors without any snap or jerk.
+   * **Option 2 (Default Home `[0.6090, -1.3806, 0.4955, -0.8437]`)**: Enables torque and sends a 2-stage 5.0-second smooth trajectory via `send_safe_trajectory()`.
+   * **Minimum-Stress Exit Routine (`z` key)**: Listens directly to `/dev/tty`. Pressing `z` drives the arm smoothly over 5 seconds to the **minimum-stress exit position** (`[0.6090, -1.8484, 0.6949, -0.3436]`) before safely disabling torque and shutting down.
+3. **[`custom_package/log_joint_states.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/custom_package/log_joint_states.py)**:
+   * Continuous live telemetry node listening to `/joint_states`. Prints joint angles formatted in Radians and Degrees at configurable Hz.
+4. **[`custom_package/launch/open_manipulator_x_interactive.launch.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/launch/open_manipulator_x_interactive.launch.py)**:
+   * Launch file spawning `ros2_control_node`, `robot_state_publisher`, `joint_state_broadcaster`, `arm_controller`, `gripper_controller`, and `interactive_homing_node`.
+5. **[`custom_package/config/configured_home_position.yaml`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/config/configured_home_position.yaml)**:
+   * Configured home pose values: `[0.6090, -1.3806, 0.4955, -0.8437]`.
 
 ---
 
-## 🎮 Key Features Developed
-
-### 1. Interactive 2-Option Homing Startup Menu
-When launching `open_manipulator_x_interactive.launch.py`, the terminal displays an interactive homing menu:
-
-* **Option 1: Custom Home Position (Manual Hand Positioning)**:
-  * Motor torque is disabled (`SetBool(data=False)`).
-  * The user positions the arm by hand and presses **ENTER** in the terminal.
-  * Torque is enabled (`SetBool(data=True)`).
-  * `sync_controller_goal_to_current()` immediately updates `arm_controller`'s target goal to match the manual pose, eliminating motor jerk.
-  * This manual pose is saved as `session_home_position`.
-
-* **Option 2: MoveIt Default Home Position (`[0.0, -1.0, 0.7, 0.3]`)**:
-  * Motor torque is enabled.
-  * `send_safe_trajectory()` executes a smooth 2-stage trajectory over 5 seconds (lifting joint 3 first before tilting joint 2).
-  * This prevents peak current spikes and eliminates Dynamixel overload protection shutdowns (`0x20` error).
-  * Saved as `session_home_position`.
-
-### 2. Return-Home and Quit (`z` Keypress Listener)
-* While the robot operates, `interactive_homing_node` listens on `/dev/tty` for keypress **`z`**.
-* Pressing **`z`** smoothly drives the arm back to the `session_home_position` established at startup.
-* Upon arrival, it logs confirmation and cleanly terminates the launch process.
-* Backup ROS 2 service: `ros2 service call /go_home_and_quit std_srvs/srv/Trigger`.
-
-### 3. MoveIt 2 Automatic Live Pose Detection
-* Updated [`open_manipulator_moveit_config/config/moveit.rviz`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/moveit.rviz) with:
-  ```yaml
-  Query Start State:
-    State: <current>
-  Query Goal State:
-    State: <current>
-  ```
-* RViz automatically initializes both Start State and Goal State to `<current>`, syncing the MoveIt 3D visualizer to the physical robot's live joint position on launch.
+### B. MoveIt 2 Configuration Updates (`open_manipulator/open_manipulator_moveit_config/`)
+1. **[`config/open_manipulator_x/open_manipulator_x.srdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/open_manipulator_x/open_manipulator_x.srdf)** & **[`config/open_manipulator_x.srdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/open_manipulator_x.srdf)**:
+   * Updated `<group_state name="home">` and `<group_state name="init">` to `[0.6090, -1.3806, 0.4955, -0.8437]`.
+2. **[`config/open_manipulator_x.urdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/open_manipulator_x.urdf)**:
+   * Created top-level evaluated URDF inside `config/` to eliminate MoveIt 2 launch-time fallback warnings (`Cannot infer URDF ...`).
+3. **[`launch/open_manipulator_x_moveit.launch.py`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/launch/open_manipulator_x_moveit.launch.py)**:
+   * Updated `MoveItConfigsBuilder` parameters to explicitly load `config/open_manipulator_x.urdf` and `config/open_manipulator_x.srdf`.
+4. **[`config/moveit.rviz`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/moveit.rviz)**:
+   * Configured default `Query Start State` and `Query Goal State` parameters to `<current>`.
 
 ---
 
-## 🛠️ Build & Run Commands
+### C. Bringup Configuration Updates (`open_manipulator/open_manipulator_bringup/`)
+1. **[`config/open_manipulator_x/initial_positions.yaml`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_bringup/config/open_manipulator_x/initial_positions.yaml)**:
+   * Updated `home` pose parameter to `[0.6090, -1.3806, 0.4955, -0.8437]`.
+2. **[`config/open_manipulator_x/configured_home_position.yaml`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_bringup/config/open_manipulator_x/configured_home_position.yaml)**:
+   * Updated stored home pose to `[0.6090, -1.3806, 0.4955, -0.8437]`.
 
-### 1. Rebuilding Packages inside Container
+---
+
+### D. Robot Description Updates (`open_manipulator/open_manipulator_description/`)
+1. **[`ros2_control/open_manipulator_x_position.ros2_control.xacro`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_description/ros2_control/open_manipulator_x_position.ros2_control.xacro)**:
+   * Added `<param name="initial_value">` to position state interfaces for joints 1-4 and gripper:
+     * `joint1`: `0.6090` rad (+34.9°)
+     * `joint2`: `-1.3806` rad (-79.1°)
+     * `joint3`: `0.4955` rad (+28.4°)
+     * `joint4`: `-0.8437` rad (-48.3°)
+     * `gripper_left_joint`: `-0.01` m
+   * Ensures mock simulation hardware (`mock_components/GenericSystem`) spawns and initializes the arm directly at the working home position.
+
+---
+
+### E. Documentation Files Created
+1. **[`docs/commands_guide.md`](file:///home/vla/VLA/openManipulator/docs/commands_guide.md)**: Detailed step-by-step commands guide for building, launching hardware homing, keyboard teleop, MoveIt 2 RViz, and real-time joint logging.
+2. **[`docs/openmanipulator_changes_summary.md`](file:///home/vla/VLA/openManipulator/docs/openmanipulator_changes_summary.md)**: Exhaustive architectural summary of all project changes.
+
+---
+
+## 🎯 3. Positional Reference Guide
+
+| Position Name | Radians $[j_1, j_2, j_3, j_4]$ | Degrees $(j_1, j_2, j_3, j_4)$ | Purpose & Usage |
+| :--- | :--- | :--- | :--- |
+| **Working Default Home** | `[0.6090, -1.3806, 0.4955, -0.8437]` | $(+34.9^\circ, -79.1^\circ, +28.4^\circ, -48.3^\circ)$ | Primary operational home position for startup, MoveIt, RViz, and teleop. |
+| **Minimum-Stress Exit** | `[0.6090, -1.8484, 0.6949, -0.3436]` | $(+34.9^\circ, -105.9^\circ, +39.8^\circ, -19.7^\circ)$ | Safe resting position. Triggered automatically on **`z`** keypress before torque is disabled. |
+
+---
+
+## 🛠️ 4. Quick Build & Execution Commands
+
 ```bash
+# Build updated workspace
 cd /root/ros2_ws
-colcon build --symlink-install --packages-select custom_package open_manipulator_moveit_config
+colcon build --symlink-install --packages-select custom_package open_manipulator_moveit_config open_manipulator_description open_manipulator_bringup
 source /root/ros2_ws/install/setup.bash
-```
 
-### 2. Launching Interactive Control Stack
-```bash
+# Terminal 1: Launch Interactive Hardware Homing
 ros2 launch custom_package open_manipulator_x_interactive.launch.py
-```
 
-### 3. Launching Keyboard Teleoperation (Optional Terminal 2)
-```bash
+# Terminal 2: Keyboard Teleop
 ros2 run open_manipulator_teleop open_manipulator_x_teleop
-```
 
-### 4. Launching MoveIt 2 Planning (Optional Terminal 2)
-```bash
+# Terminal 3: MoveIt 2 & RViz
 ros2 launch open_manipulator_moveit_config open_manipulator_x_moveit.launch.py
+
+# Terminal 4: Real-Time Joint State Logging
+ros2 run custom_package log_joint_states
 ```

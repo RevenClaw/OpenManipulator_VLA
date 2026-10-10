@@ -25,6 +25,7 @@ setup(
         'console_scripts': [
             'record_home_position = custom_package.record_home_position:main',
             'interactive_homing_node = custom_package.interactive_homing_node:main',
+            'log_joint_states = custom_package.log_joint_states:main',
         ],
     },
 )
