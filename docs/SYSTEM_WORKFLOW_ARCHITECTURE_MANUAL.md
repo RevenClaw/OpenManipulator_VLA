@@ -314,7 +314,7 @@ Base ─── Shoulder ─── Elbow                                         
 ### 3. The Minimum-Stress Exit Routine
 * When motor torque is disabled, non-backdrivable worm-gear robots stay in place, but direct-drive and low-gear planetary/spur actuators (like the Dynamixel XM series) are **backdrivable under gravity**.
 * Cutting torque in an upright or extended posture causes the arm to drop and strike the mounting surface.
-* The minimum-stress exit position (`[0.6090, -1.8484, 0.6949, -0.3436]`) folds the kinematic chain close to its mechanical rest configuration before torque is disabled, ensuring a controlled, safe power-down.
+* The minimum-stress exit position (`[0.6090, -1.8300, 1.5892, 0.4847]`) folds the kinematic chain close to its mechanical rest configuration before torque is disabled, ensuring a controlled, safe power-down.
 
 ---
 

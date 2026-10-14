@@ -8,7 +8,7 @@ joint_trajectory_executor:
 
     step_names: [home]  # Names of the steps
 
-    home: [0.6090, -1.3806, 0.4955, -0.8437]  # Home position
+    home: [0.6090, -1.3622, 1.3898, -0.0154]  # Home position
 
     duration: 3.0
     epsilon: 0.01

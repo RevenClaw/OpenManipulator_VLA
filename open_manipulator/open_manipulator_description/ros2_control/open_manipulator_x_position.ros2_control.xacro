@@ -43,7 +43,7 @@
       <joint name="${prefix}joint2">
         <command_interface name="position"/>
         <state_interface name="position">
-          <param name="initial_value">-1.3806</param>
+          <param name="initial_value">-1.3622</param>
         </state_interface>
         <state_interface name="velocity"/>
         <state_interface name="effort"/>
@@ -51,7 +51,7 @@
       <joint name="${prefix}joint3">
         <command_interface name="position"/>
         <state_interface name="position">
-          <param name="initial_value">0.4955</param>
+          <param name="initial_value">1.3898</param>
         </state_interface>
         <state_interface name="velocity"/>
         <state_interface name="effort"/>
@@ -59,7 +59,7 @@
       <joint name="${prefix}joint4">
         <command_interface name="position"/>
         <state_interface name="position">
-          <param name="initial_value">-0.8437</param>
+          <param name="initial_value">-0.0154</param>
         </state_interface>
         <state_interface name="velocity"/>
         <state_interface name="effort"/>
@@ -97,6 +97,10 @@
         <param name="Profile Acceleration">10</param>
         <param name="Drive Mode">4</param>
         <param name="Return Delay Time">0</param>
+        <!-- Joint-zero calibration, see docs/joint_offset_investigation.md -->
+        <param name="Homing Offset">-17</param>
+        <param name="Min Position Limit">0</param>
+        <param name="Max Position Limit">4095</param>
       </gpio>
       <gpio name="dxl2">
         <param name="type">dxl</param>
@@ -113,6 +117,10 @@
         <param name="Profile Acceleration">10</param>
         <param name="Drive Mode">4</param>
         <param name="Return Delay Time">0</param>
+        <!-- Joint-zero calibration, see docs/joint_offset_investigation.md -->
+        <param name="Homing Offset">166</param>
+        <param name="Min Position Limit">862</param>
+        <param name="Max Position Limit">3506</param>
       </gpio>
       <gpio name="dxl3">
         <param name="type">dxl</param>
@@ -129,6 +137,10 @@
         <param name="Profile Acceleration">10</param>
         <param name="Drive Mode">4</param>
         <param name="Return Delay Time">0</param>
+        <!-- Joint-zero calibration, see docs/joint_offset_investigation.md -->
+        <param name="Homing Offset">38</param>
+        <param name="Min Position Limit">712</param>
+        <param name="Max Position Limit">3094</param>
       </gpio>
       <gpio name="dxl4">
         <param name="type">dxl</param>
@@ -145,6 +157,10 @@
         <param name="Profile Acceleration">10</param>
         <param name="Drive Mode">4</param>
         <param name="Return Delay Time">0</param>
+        <!-- Joint-zero calibration, see docs/joint_offset_investigation.md -->
+        <param name="Homing Offset">-124</param>
+        <param name="Min Position Limit">715</param>
+        <param name="Max Position Limit">3340</param>
       </gpio>
       <gpio name="dxl5">
         <param name="type">dxl</param>

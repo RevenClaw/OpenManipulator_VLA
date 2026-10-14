@@ -46,9 +46,9 @@ class InteractiveHomingNode(Node):
         super().__init__('interactive_homing_node')
 
         self.joint_names = ['joint1', 'joint2', 'joint3', 'joint4']
-        self.moveit_default_home = [0.6090, -1.3806, 0.4955, -0.8437]
+        self.moveit_default_home = [0.6090, -1.3622, 1.3898, -0.0154]
         self.zero_pose = [0.0, 0.0, 0.0, 0.0]
-        self.min_stress_exit_position = [0.6090, -1.8484, 0.6949, -0.3436]
+        self.min_stress_exit_position = [0.6090, -1.8300, 1.5892, 0.4847]
         self.session_home_position = None
         self.current_positions = None
         self.lock = threading.Lock()
@@ -291,7 +291,7 @@ def main(args=None):
     menu_prompt = (
         "\nSelect Homing Mode for this Session:\n"
         "  [1] Custom Home Position (Move arm by hand & press ENTER)\n"
-        "  [2] MoveIt Default Home Position [0.6090, -1.3806, 0.4955, -0.8437]\n"
+        "  [2] MoveIt Default Home Position [0.6090, -1.3622, 1.3898, -0.0154]\n"
         "  [3] Zero Pose [0.0, 0.0, 0.0, 0.0] (All joints to zero)\n\n"
         "Enter choice (1, 2, or 3): "
     )
@@ -313,7 +313,7 @@ def main(args=None):
         node.sync_controller_goal_to_current(node.session_home_position)
 
     elif choice == '2':
-        print('\n[Option 2 Selected] Smoothly moving to MoveIt Home Position [0.6090, -1.3806, 0.4955, -0.8437]...')
+        print('\n[Option 2 Selected] Smoothly moving to MoveIt Home Position [0.6090, -1.3622, 1.3898, -0.0154]...')
         node.session_home_position = list(node.moveit_default_home)
         print('Enabling motor torque...')
         node.set_torque(enable=True)

@@ -26,12 +26,12 @@ ros2 launch custom_package open_manipulator_x_interactive.launch.py
 
 ### Homing Options on Startup:
 * **Option 1 (Custom Manual Home)**: Motor torque is disabled immediately so you can move the arm freely by hand to your desired initial pose. Press **ENTER** in the terminal to lock torque cleanly without any movement or jerk.
-* **Option 2 (MoveIt Default Home `[0.6090, -1.3806, 0.4955, -0.8437]`)**: Torque locks and smoothly moves the arm over 5 seconds to the recommended home position.
+* **Option 2 (MoveIt Default Home `[0.6090, -1.3622, 1.3898, -0.0154]`)**: Torque locks and smoothly moves the arm over 5 seconds to the recommended home position.
 
 > [!IMPORTANT]
 > **Best Practice & Safe Exit Routine (`z` key)**:
 > - **Operational Guidance**: Unless necessary, always return the robot to the default home position before ending your session.
-> - **Minimum Stress Exit Position**: When you press **`z`** in the launch terminal to exit, the robot arm will automatically move to the minimum-stress exit position (`j1: +0.6090 rad (+34.9°), j2: -1.8484 rad (-105.9°), j3: +0.6949 rad (+39.8°), j4: -0.3436 rad (-19.7°)`).
+> - **Minimum Stress Exit Position**: When you press **`z`** in the launch terminal to exit, the robot arm will automatically move to the minimum-stress exit position (`j1: +0.6090 rad (+34.9°), j2: -1.8300 rad (-104.9°), j3: +1.5892 rad (+91.1°), j4: +0.4847 rad (+27.8°)`).
 > - **Why**: Transitioning to this minimum-stress position ensures that when motor torque is disabled upon disconnection, gravity and arm cantilever forces do not cause a sudden physical jerk or drop.
 
 ---

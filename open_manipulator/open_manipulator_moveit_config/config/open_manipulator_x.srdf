@@ -13,15 +13,15 @@
     </group>
     <group_state name="init" group="arm">
         <joint name="joint1" value="0.6090"/>
-        <joint name="joint2" value="-1.3806"/>
-        <joint name="joint3" value="0.4955"/>
-        <joint name="joint4" value="-0.8437"/>
+        <joint name="joint2" value="-1.3622"/>
+        <joint name="joint3" value="1.3898"/>
+        <joint name="joint4" value="-0.0154"/>
     </group_state>
     <group_state name="home" group="arm">
         <joint name="joint1" value="0.6090"/>
-        <joint name="joint2" value="-1.3806"/>
-        <joint name="joint3" value="0.4955"/>
-        <joint name="joint4" value="-0.8437"/>
+        <joint name="joint2" value="-1.3622"/>
+        <joint name="joint3" value="1.3898"/>
+        <joint name="joint4" value="-0.0154"/>
     </group_state>
     <group_state name="open" group="gripper">
         <joint name="gripper_left_joint" value="0.019"/>
