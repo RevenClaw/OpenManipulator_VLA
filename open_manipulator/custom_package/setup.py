@@ -27,6 +27,7 @@ setup(
             'interactive_homing_node = custom_package.interactive_homing_node:main',
             'log_joint_states = custom_package.log_joint_states:main',
             'joint_commander = custom_package.joint_commander:main',
+            'ee_commander = custom_package.ee_commander:main',
         ],
     },
 )

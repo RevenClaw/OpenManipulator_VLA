@@ -17,12 +17,12 @@ This document provides a complete, itemized technical record of all modification
 ### A. New Custom Package (`open_manipulator/custom_package/`)
 1. **[`package.xml`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/package.xml)** & **[`setup.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/setup.py)**:
    * Created standard Python ROS 2 package configuration.
-   * Registered 3 executable entry points: `record_home_position`, `interactive_homing_node`, and `log_joint_states`.
+   * Registered 5 executable entry points: `record_home_position`, `interactive_homing_node`, `log_joint_states`, `joint_commander`, and `ee_commander` (Cartesian end-effector goals: closed-form IK + MoveIt plan/execute, see `commands_guide.md` Step 3b).
 2. **[`custom_package/interactive_homing_node.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/custom_package/interactive_homing_node.py)**:
    * **Instant Torque Unlock**: Automatically invokes `/dynamixel_hardware_interface/set_dxl_torque(enable=false)` on node startup so the user can position the physical arm freely by hand.
-   * **Option 1 (Manual Hand Pose)**: Prompts user to position arm and press `ENTER`. Invokes `sync_controller_goal_to_current()` to sync the active controller goal to the current pose before enabling torque, locking motors without any snap or jerk.
+   * **Option 1 (Manual Hand Pose)**: Prompts user to position arm and press `ENTER`. `arm_controller` is deactivated (`/controller_manager/switch_controller`) while the arm is moved by hand. After `ENTER`, torque is enabled and `arm_controller` is re-activated, so it holds the new pose instead of pulling back to its old hold target.
    * **Option 2 (Default Home `[0.6090, -1.3622, 1.3898, -0.0154]`)**: Enables torque and sends a 2-stage 5.0-second smooth trajectory via `send_safe_trajectory()`.
-   * **Minimum-Stress Exit Routine (`z` key)**: Listens directly to `/dev/tty`. Pressing `z` drives the arm smoothly over 5 seconds to the **minimum-stress exit position** (`[0.6090, -1.8300, 1.5892, 0.4847]`) before safely disabling torque and shutting down.
+   * **Minimum-Stress Exit Routine (`z` key)**: Listens directly to `/dev/tty`. Pressing `z` drives the arm smoothly over 5 seconds to the **minimum-stress exit position** (`[0.4633, -1.8190, 1.4972, 0.4019]`, the measured torque-off resting pose), then offers **[1]** return to the session home and keep listening for `z`, or **[2]** disable torque on all motors and quit, which also ends the launch.
 3. **[`custom_package/log_joint_states.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/custom_package/log_joint_states.py)**:
    * Continuous live telemetry node listening to `/joint_states`. Prints joint angles formatted in Radians and Degrees at configurable Hz.
 4. **[`custom_package/launch/open_manipulator_x_interactive.launch.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/launch/open_manipulator_x_interactive.launch.py)**:
@@ -82,7 +82,7 @@ This document provides a complete, itemized technical record of all modification
 | Position Name | Radians $[j_1, j_2, j_3, j_4]$ | Degrees $(j_1, j_2, j_3, j_4)$ | Purpose & Usage |
 | :--- | :--- | :--- | :--- |
 | **Working Default Home** | `[0.6090, -1.3622, 1.3898, -0.0154]` | $(+34.9^\circ, -78.0^\circ, +79.6^\circ, -0.9^\circ)$ | Primary operational home position for startup, MoveIt, RViz, and teleop. |
-| **Minimum-Stress Exit** | `[0.6090, -1.8300, 1.5892, 0.4847]` | $(+34.9^\circ, -104.9^\circ, +91.1^\circ, +27.8^\circ)$ | Safe resting position. Triggered automatically on **`z`** keypress before torque is disabled. |
+| **Minimum-Stress Exit** | `[0.4633, -1.8190, 1.4972, 0.4019]` | $(+26.5^\circ, -104.2^\circ, +85.8^\circ, +23.0^\circ)$ | Reached on **`z`** keypress; then [1] back to session home or [2] torque off and quit. |
 
 ---
 

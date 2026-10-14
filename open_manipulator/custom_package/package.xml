@@ -10,6 +10,11 @@
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>std_srvs</depend>
+  <depend>control_msgs</depend>
+  <depend>controller_manager_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>trajectory_msgs</depend>
   <depend>open_manipulator_bringup</depend>
   <depend>dynamixel_hardware_interface</depend>
   <depend>launch</depend>

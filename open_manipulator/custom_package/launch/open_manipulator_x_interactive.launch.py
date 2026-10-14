@@ -18,6 +18,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import RegisterEventHandler
+from launch.actions import Shutdown
 from launch.conditions import IfCondition
 from launch.conditions import UnlessCondition
 from launch.event_handlers import OnProcessExit
@@ -178,6 +179,14 @@ def generate_launch_description():
         )
     )
 
+    # Quitting the homing node (exit menu option 2) ends the whole launch
+    shutdown_after_interactive_homing = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=interactive_homing_node,
+            on_exit=[Shutdown(reason='interactive_homing_node exited')],
+        )
+    )
+
     return LaunchDescription(
         declared_arguments
         + [
@@ -186,5 +195,6 @@ def generate_launch_description():
             robot_state_publisher_node,
             delay_rviz_after_joint_state_broadcaster_spawner,
             delay_interactive_homing_after_controllers,
+            shutdown_after_interactive_homing,
         ]
     )

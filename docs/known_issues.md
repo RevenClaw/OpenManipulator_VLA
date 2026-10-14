@@ -16,7 +16,7 @@ deferred. All paths are relative to `open_manipulator/`.
   The arm still moves.
 * **Fix direction:** Use a `GripperCommand` action client on `/gripper_controller/gripper_cmd` (`command.position`, `command.max_effort`).
 
-## 2. Minimum-stress exit pose is outside the URDF joint2 limit
+## 2. Minimum-stress exit pose is outside the URDF joint2 limit  *(🔧 fixed 2026-10-14, not yet tested on hardware)*
 
 * **Files:** `custom_package/custom_package/interactive_homing_node.py` (`min_stress_exit_position`); joint limits in
   `open_manipulator_description/urdf/open_manipulator_x/*`
@@ -27,8 +27,13 @@ deferred. All paths are relative to `open_manipulator/`.
   outside the limits.
 * **Fix direction:** After issue #4 is resolved, pick an exit pose that is within the limits, or widen the limit if the
   hardware range has been verified.
+* **Fix:** Moving the exit pose onto the old limits made the arm drop when torque was cut. The exit pose is now the measured torque-off
+  resting pose `[0.4633, -1.8190, 1.4972, 0.4019]` (j2 rests at −1.8392, so it is held just inside the servo Min Position Limit −1.8193).
+  The URDF limits (all 3 copies) and `joint_commander` `JOINT_LIMITS` are widened to j2 `[-1.82, 1.5]` and j3 `[-1.5, 1.55]`, within
+  the servo limits. After torque-off the arm rests 0.02 rad past j2's lower limit, which is within MoveIt's 0.05 rad start-state
+  tolerance. Option 1 can still leave joints outside the limits.
 
-## 3. Option 1 can jerk briefly when torque is re-enabled
+## 3. Option 1 can jerk briefly when torque is re-enabled  *(🔧 fixed 2026-10-14, not yet tested on hardware)*
 
 * **File:** `custom_package/custom_package/interactive_homing_node.py` (`main`, Option 1 branch)
 * **Problem:** The node calls `set_torque(True)` *before* `sync_controller_goal_to_current()`. On torque enable,
@@ -36,6 +41,9 @@ deferred. All paths are relative to `open_manipulator/`.
   own hold position (captured when the controller activated, before the arm was moved by hand) on every 10 ms cycle, which replaces that copy.
 * **Symptom:** The motors can move briefly toward the old activation pose until the sync goal arrives.
 * **Fix direction:** Send the sync goal first and wait for it to be accepted, then enable torque.
+* **Fix:** Option 1 now deactivates `arm_controller` (`/controller_manager/switch_controller`) before the hand-move, then after
+  ENTER enables torque (the driver copies state → command) and re-activates it. The JTC (`set_last_command_interface_value_as_state_on_activation`,
+  default true) then holds the measured pose. If deactivation fails, it falls back to sync-goal-then-torque.
 
 ## 4. +45° URDF offset on joint3/joint4 hides a servo zero-offset problem  *(✅ resolved 2026-10-14)*
 
@@ -96,10 +104,13 @@ deferred. All paths are relative to `open_manipulator/`.
   `controller_manager` overrun.
 * **Workaround:** Read registers with the launch stopped (see Appendix A of `docs/joint_offset_investigation.md`).
 
-## 9. `interactive_homing_node` crashes on exit and never disables torque itself
+## 9. `interactive_homing_node` crashes on exit and never disables torque itself  *(🔧 fixed 2026-10-14, not yet tested on hardware)*
 
 * **File:** `custom_package/custom_package/interactive_homing_node.py` (`main`)
 * **Problem:** After the `z` exit move, the node calls `rclpy.shutdown()` while its `rclpy.spin` thread is still running. The process aborts
   with `terminate called without an active exception` (exit code −6). The node never calls `set_torque(False)`. It relies on the driver's
   `stop()` running at shutdown, but on 2026-10-14 `stop()` did not run when the launch was interrupted, and all servos stayed torque-enabled.
 * **Fix direction:** Disable torque explicitly after the exit move, and stop the executor and join the spin thread before `rclpy.shutdown()`.
+* **Fix:** After the `z` move a menu asks [1] return to session home (loop, `z` armed again) or [2] quit. Quit calls
+  `set_torque(False)`, shuts down an explicit `SingleThreadedExecutor`, joins the spin thread, then calls `rclpy.shutdown()`. An
+  `OnProcessExit` → `Shutdown` handler in `open_manipulator_x_interactive.launch.py` ends the launch when the node exits.

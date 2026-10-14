@@ -31,7 +31,7 @@ ros2 launch custom_package open_manipulator_x_interactive.launch.py
 > [!IMPORTANT]
 > **Best Practice & Safe Exit Routine (`z` key)**:
 > - **Operational Guidance**: Unless necessary, always return the robot to the default home position before ending your session.
-> - **Minimum Stress Exit Position**: When you press **`z`** in the launch terminal to exit, the robot arm will automatically move to the minimum-stress exit position (`j1: +0.6090 rad (+34.9°), j2: -1.8300 rad (-104.9°), j3: +1.5892 rad (+91.1°), j4: +0.4847 rad (+27.8°)`).
+> - **Minimum Stress Exit Position**: When you press **`z`** in the launch terminal to exit, the robot arm will automatically move to the minimum-stress exit position (`j1: +0.4633 rad (+26.5°), j2: -1.8190 rad (-104.2°), j3: +1.4972 rad (+85.8°), j4: +0.4019 rad (+23.0°)`), the arm's measured torque-off resting pose. It then asks: **`1`** returns to the session home position and listens for `z` again; **`2`** disables torque on all motors, quits the node and shuts down the whole launch.
 > - **Why**: Transitioning to this minimum-stress position ensures that when motor torque is disabled upon disconnection, gravity and arm cantilever forces do not cause a sudden physical jerk or drop.
 
 ---
@@ -72,6 +72,40 @@ ros2 launch open_manipulator_moveit_config open_manipulator_x_moveit.launch.py
 3. In the left **MotionPlanning** panel:
    * Click **Plan** to compute an obstacle-free trajectory.
    * Click **Execute** to send trajectory goals to the physical robot arm!
+
+---
+
+## 🎯 Step 3b: Command the End Effector by Coordinates (Terminal 3 or 4)
+
+Needs Step 1 (hardware) **and** Step 3 (MoveIt) running. Then:
+
+```bash
+source /root/ros2_ws/install/setup.bash
+ros2 run custom_package ee_commander
+```
+
+The node solves the 4-DOF inverse kinematics itself (closed form; MoveIt's IK is position-only for this arm and ignores pitch),
+then sends the joint goal to MoveIt `move_group`, which plans a collision-free path and executes it on `arm_controller`.
+The gripper is driven via `/gripper_controller/gripper_cmd` (GripperCommand) after the arm arrives.
+
+**Terminal input:** `<x_m> <y_m> <z_m> <pitch°> [<gripper 0|1>]`, e.g. `0.20 0.00 0.15 0 1`. `p` prints the current pose, `q` quits.
+
+* **Frame:** `world` (= `link1`, the robot base). x forward, y left, z up, in metres. The pose is that of `end_effector_link`
+  (between the fingertips).
+* **Pitch:** 0 = gripper horizontal, +90° = pointing straight down. Yaw always follows the base direction (`atan2(y, x)`)
+  and roll is always 0; the 4-joint arm cannot set them independently.
+* **Reach:** for reference, the zero pose puts the end effector at `x=0.286, z=0.1875`. Targets the arm can only reach by
+  leaning back over its base are not supported.
+
+**From other nodes:** publish `std_msgs/Float64MultiArray` on `/ee_goal` with `[x_m, y_m, z_m, pitch_rad, gripper]`
+(gripper: 1 open, 0 close, -1 unchanged). A new goal replaces one that has not started yet; the running motion is not
+interrupted.
+```bash
+ros2 topic pub --once /ee_goal std_msgs/msg/Float64MultiArray "{data: [0.20, 0.0, 0.15, 0.0, -1]}"
+```
+
+**Parameters:** `velocity_scaling` (0.3), `acceleration_scaling` (0.3), `planning_time` (5.0 s), `min_z` (0.0 m, targets
+below are rejected), e.g. `ros2 run custom_package ee_commander --ros-args -p velocity_scaling:=0.1`.
 
 ---
 

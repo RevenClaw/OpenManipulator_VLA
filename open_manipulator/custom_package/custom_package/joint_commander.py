@@ -32,8 +32,8 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 # ---------------------------------------------------------------------------
 JOINT_LIMITS = {
     'joint1': (-math.pi,        math.pi),        # -180.0° to +180.0°
-    'joint2': (-1.5,            1.5),             # -85.94° to +85.94°
-    'joint3': (-1.5,            1.4),             # -85.94° to +80.21°
+    'joint2': (-1.82,           1.5),             # -104.28° to +85.94°
+    'joint3': (-1.5,            1.55),            # -85.94° to +88.81°
     'joint4': (-1.7,            1.97),            # -97.40° to +112.87°
 }
 

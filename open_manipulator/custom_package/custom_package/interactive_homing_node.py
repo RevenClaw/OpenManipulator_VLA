@@ -23,8 +23,10 @@ import time
 import tty
 
 from control_msgs.action import FollowJointTrajectory
+from controller_manager_msgs.srv import SwitchController
 import rclpy
 from rclpy.action import ActionClient
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_srvs.srv import SetBool
@@ -37,9 +39,11 @@ class InteractiveHomingNode(Node):
     """
     Interactive Homing Node:
     - Provides interactive startup menu (Option 1: Custom Manual Pose, Option 2: MoveIt Default Pose).
-    - Syncs arm_controller active goal to manual position on torque enable (prevents snapping back to initial 0 pose).
+    - Deactivates arm_controller while the arm is moved by hand and re-activates it after torque enable, so it
+      holds the new manual position instead of pulling back to its old hold target.
     - Saves chosen pose as session_home_position.
-    - Monitors terminal for 'z' keypress to return to session_home_position and quit.
+    - Monitors terminal for 'z' keypress to move to the minimum-stress exit position, then asks to
+      either return to session_home_position (and keep listening) or disable torque and quit.
     """
 
     def __init__(self):
@@ -48,7 +52,10 @@ class InteractiveHomingNode(Node):
         self.joint_names = ['joint1', 'joint2', 'joint3', 'joint4']
         self.moveit_default_home = [0.6090, -1.3622, 1.3898, -0.0154]
         self.zero_pose = [0.0, 0.0, 0.0, 0.0]
-        self.min_stress_exit_position = [0.6090, -1.8300, 1.5892, 0.4847]
+        # Resting pose the arm settles into with torque off (measured), so cutting torque here
+        # barely drops it. joint2 rests at -1.8392, just past the servo Min Position Limit, so it
+        # is commanded to -1.8190 (just inside the limit).
+        self.min_stress_exit_position = [0.4633, -1.8190, 1.4972, 0.4019]
         self.session_home_position = None
         self.current_positions = None
         self.lock = threading.Lock()
@@ -59,6 +66,11 @@ class InteractiveHomingNode(Node):
         # Service client to control motor torque
         self.torque_client = self.create_client(
             SetBool, '/dynamixel_hardware_interface/set_dxl_torque'
+        )
+
+        # Service client to activate/deactivate arm_controller around manual positioning
+        self.switch_controller_client = self.create_client(
+            SwitchController, '/controller_manager/switch_controller'
         )
 
         # Action client to send trajectory commands
@@ -116,6 +128,43 @@ class InteractiveHomingNode(Node):
         else:
             self.get_logger().error('Failed to call torque service.')
             return False
+
+    def set_arm_controller_active(self, active: bool) -> bool:
+        """
+        Activates or deactivates arm_controller. On activation the JointTrajectoryController
+        holds the joints at their measured position.
+        """
+        if not self.switch_controller_client.wait_for_service(timeout_sec=5.0):
+            self.get_logger().error(
+                'Service /controller_manager/switch_controller not available.'
+            )
+            return False
+
+        request = SwitchController.Request()
+        if active:
+            request.activate_controllers = ['arm_controller']
+        else:
+            request.deactivate_controllers = ['arm_controller']
+        request.strictness = SwitchController.Request.STRICT
+        request.timeout.sec = 3
+        future = self.switch_controller_client.call_async(request)
+
+        start_time = time.time()
+        while not future.done():
+            if time.time() - start_time > 5.0:
+                self.get_logger().error('Timeout waiting for switch_controller response.')
+                return False
+            time.sleep(0.05)
+
+        res = future.result()
+        if res is None or not res.ok:
+            self.get_logger().error(
+                f"Failed to {'activate' if active else 'deactivate'} arm_controller"
+                + (f': {res.message}' if res is not None and res.message else '.')
+            )
+            return False
+        self.get_logger().info(f"arm_controller {'activated' if active else 'deactivated'}.")
+        return True
 
     def sync_controller_goal_to_current(self, positions) -> bool:
         """
@@ -223,14 +272,14 @@ def read_tty_choice(prompt, valid_choices=('1', '2', '3')):
                 line = tty_file.readline().strip()
                 if line in valid_choices:
                     return line
-                sys.stdout.write(f"\nInvalid choice '{line}'. Please enter 1, 2, or 3: ")
+                sys.stdout.write(f"\nInvalid choice '{line}'. Please enter {', '.join(valid_choices)}: ")
                 sys.stdout.flush()
     except Exception:
         while True:
             line = input().strip()
             if line in valid_choices:
                 return line
-            print("Invalid choice. Please enter 1, 2, or 3: ")
+            print(f"Invalid choice. Please enter {', '.join(valid_choices)}: ")
 
 
 def wait_for_enter_keypress():
@@ -245,7 +294,7 @@ def wait_for_enter_keypress():
 
 
 def listen_for_z_key(node):
-    """Background listener for 'z' keypress to trigger return to session home position and quit."""
+    """Background listener for 'z' keypress to trigger the move to the minimum-stress exit position."""
     def key_listener():
         try:
             with open('/dev/tty', 'r') as tty_file:
@@ -258,7 +307,7 @@ def listen_for_z_key(node):
                         if rlist:
                             ch = tty_file.read(1)
                             if ch.lower() == 'z':
-                                sys.stdout.write("\n\n🏠 'z' key detected! Returning to SESSION Home Position...\n")
+                                sys.stdout.write("\n\n🏠 'z' key detected! Moving to Minimum Stress Exit Position...\n")
                                 sys.stdout.flush()
                                 node.quit_trigger_received = True
                                 break
@@ -269,13 +318,16 @@ def listen_for_z_key(node):
 
     t = threading.Thread(target=key_listener, daemon=True)
     t.start()
+    return t
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = InteractiveHomingNode()
 
-    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
 
     print('\n' + '=' * 65)
@@ -300,6 +352,10 @@ def main(args=None):
 
     if choice == '1':
         print('\n[Option 1 Selected] Motor torque disabled. Position arm by hand.')
+        # Without an active arm_controller there is no stale hold target to pull back to
+        controller_deactivated = node.set_arm_controller_active(False)
+        if not controller_deactivated:
+            print('⚠️ Could not deactivate arm_controller; falling back to syncing its goal before torque enable.')
         wait_for_enter_keypress()
 
         with node.lock:
@@ -307,10 +363,16 @@ def main(args=None):
 
         pos_str = ', '.join([f'{p:+.4f}' for p in node.session_home_position])
         print(f'\nCapturing Custom Home Position [j1, j2, j3, j4]: [{pos_str}]')
-        print('Enabling motor torque and syncing controller target...')
-        node.set_torque(enable=True)
-        # Immediately overwrite arm_controller goal target with current manual position
-        node.sync_controller_goal_to_current(node.session_home_position)
+        if controller_deactivated:
+            print('Enabling motor torque and re-activating arm_controller...')
+            node.set_torque(enable=True)
+            # Re-activated controller holds the current (manual) position
+            node.set_arm_controller_active(True)
+        else:
+            print('Syncing controller target and enabling motor torque...')
+            node.sync_controller_goal_to_current(node.session_home_position)
+            time.sleep(0.3)
+            node.set_torque(enable=True)
 
     elif choice == '2':
         print('\n[Option 2 Selected] Smoothly moving to MoveIt Home Position [0.6090, -1.3622, 1.3898, -0.0154]...')
@@ -332,27 +394,55 @@ def main(args=None):
     print('\n' + '=' * 65)
     print(f'🔒 TORQUE LOCKED! Session Home Position: [{session_pos_str}]')
     print('=' * 65)
-    print(f"👉 Press 'z' in this terminal at ANY TIME to return to Minimum Stress Exit Position [{exit_pos_str}] and QUIT.")
-    print("   (Or run in another terminal: ros2 service call /go_home_and_quit std_srvs/srv/Trigger)")
-    print('=' * 65 + '\n')
 
-    # Step 2: Start background key listener for 'z'
-    listen_for_z_key(node)
+    exit_menu_prompt = (
+        "\nAt Minimum Stress Exit Position. Select next step:\n"
+        f"  [1] Return to Session Home Position [{session_pos_str}]\n"
+        "  [2] Disable torque on all motors and quit (the arm relaxes under gravity)\n\n"
+        "Enter choice (1 or 2): "
+    )
 
-    while not node.quit_trigger_received:
-        time.sleep(0.1)
+    while True:
+        print(f"👉 Press 'z' in this terminal at ANY TIME to move to Minimum Stress Exit Position [{exit_pos_str}].")
+        print("   (Or run in another terminal: ros2 service call /go_home_and_quit std_srvs/srv/Trigger)")
+        print('=' * 65 + '\n')
 
-    # Step 3: Return to the Minimum Stress Exit Position & Quit safely
-    print(f'\n🏠 RETURNING TO MINIMUM STRESS EXIT POSITION: [{exit_pos_str}]...')
-    success = node.send_safe_trajectory(node.min_stress_exit_position, duration_sec=5.0)
+        # Background key listener for 'z'
+        listener = listen_for_z_key(node)
 
-    if success:
-        print('✅ Safely returned to Minimum Stress Position!')
-    else:
-        print('⚠️ Trajectory completed or timed out.')
+        while not node.quit_trigger_received:
+            time.sleep(0.1)
+        # The listener must restore the terminal before the menu reads from it
+        listener.join(timeout=1.0)
+
+        # Move to the Minimum Stress Exit Position
+        print(f'\n🏠 MOVING TO MINIMUM STRESS EXIT POSITION: [{exit_pos_str}]...')
+        if node.send_safe_trajectory(node.min_stress_exit_position, duration_sec=5.0):
+            print('✅ Reached Minimum Stress Exit Position.')
+        else:
+            print('⚠️ Trajectory completed or timed out.')
+
+        choice = read_tty_choice(exit_menu_prompt, valid_choices=('1', '2'))
+        if choice == '2':
+            break
+
+        print(f'\n🔁 RETURNING TO SESSION HOME POSITION: [{session_pos_str}]...')
+        if node.send_safe_trajectory(node.session_home_position, duration_sec=5.0):
+            print('✅ Reached Session Home Position.')
+        else:
+            print('⚠️ Trajectory completed or timed out.')
+        node.quit_trigger_received = False
+        print('\n' + '=' * 65)
+
+    print('\nDisabling motor torque...')
+    if not node.set_torque(enable=False):
+        print('⚠️ Torque disable failed! Motors may still be powered.')
 
     print('👋 Exiting interactive homing node...')
     node.running = False
+    # Stop the spin thread before shutting rclpy down (avoids the abort on exit)
+    executor.shutdown()
+    spin_thread.join(timeout=2.0)
     node.destroy_node()
     rclpy.shutdown()
 
