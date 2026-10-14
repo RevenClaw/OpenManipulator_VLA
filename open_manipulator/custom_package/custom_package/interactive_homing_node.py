@@ -47,6 +47,7 @@ class InteractiveHomingNode(Node):
 
         self.joint_names = ['joint1', 'joint2', 'joint3', 'joint4']
         self.moveit_default_home = [0.6090, -1.3806, 0.4955, -0.8437]
+        self.zero_pose = [0.0, 0.0, 0.0, 0.0]
         self.min_stress_exit_position = [0.6090, -1.8484, 0.6949, -0.3436]
         self.session_home_position = None
         self.current_positions = None
@@ -213,7 +214,7 @@ class InteractiveHomingNode(Node):
         return True
 
 
-def read_tty_choice(prompt, valid_choices=('1', '2')):
+def read_tty_choice(prompt, valid_choices=('1', '2', '3')):
     sys.stdout.write(prompt)
     sys.stdout.flush()
     try:
@@ -222,14 +223,14 @@ def read_tty_choice(prompt, valid_choices=('1', '2')):
                 line = tty_file.readline().strip()
                 if line in valid_choices:
                     return line
-                sys.stdout.write(f"\nInvalid choice '{line}'. Please enter 1 or 2: ")
+                sys.stdout.write(f"\nInvalid choice '{line}'. Please enter 1, 2, or 3: ")
                 sys.stdout.flush()
     except Exception:
         while True:
             line = input().strip()
             if line in valid_choices:
                 return line
-            print("Invalid choice. Please enter 1 or 2: ")
+            print("Invalid choice. Please enter 1, 2, or 3: ")
 
 
 def wait_for_enter_keypress():
@@ -290,11 +291,12 @@ def main(args=None):
     menu_prompt = (
         "\nSelect Homing Mode for this Session:\n"
         "  [1] Custom Home Position (Move arm by hand & press ENTER)\n"
-        "  [2] MoveIt Default Home Position [0.6090, -1.3806, 0.4955, -0.8437]\n\n"
-        "Enter choice (1 or 2): "
+        "  [2] MoveIt Default Home Position [0.6090, -1.3806, 0.4955, -0.8437]\n"
+        "  [3] Zero Pose [0.0, 0.0, 0.0, 0.0] (All joints to zero)\n\n"
+        "Enter choice (1, 2, or 3): "
     )
 
-    choice = read_tty_choice(menu_prompt, valid_choices=('1', '2'))
+    choice = read_tty_choice(menu_prompt, valid_choices=('1', '2', '3'))
 
     if choice == '1':
         print('\n[Option 1 Selected] Motor torque disabled. Position arm by hand.')
@@ -313,6 +315,13 @@ def main(args=None):
     elif choice == '2':
         print('\n[Option 2 Selected] Smoothly moving to MoveIt Home Position [0.6090, -1.3806, 0.4955, -0.8437]...')
         node.session_home_position = list(node.moveit_default_home)
+        print('Enabling motor torque...')
+        node.set_torque(enable=True)
+        node.send_safe_trajectory(node.session_home_position, duration_sec=5.0)
+
+    elif choice == '3':
+        print('\n[Option 3 Selected] Smoothly moving to Zero Pose [0.0, 0.0, 0.0, 0.0]...')
+        node.session_home_position = list(node.zero_pose)
         print('Enabling motor torque...')
         node.set_torque(enable=True)
         node.send_safe_trajectory(node.session_home_position, duration_sec=5.0)

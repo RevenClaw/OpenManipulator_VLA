@@ -36,7 +36,7 @@ This document provides a complete, itemized technical record of all modification
 1. **[`config/open_manipulator_x/open_manipulator_x.srdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/open_manipulator_x/open_manipulator_x.srdf)** & **[`config/open_manipulator_x.srdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/open_manipulator_x.srdf)**:
    * Updated `<group_state name="home">` and `<group_state name="init">` to `[0.6090, -1.3806, 0.4955, -0.8437]`.
 2. **[`config/open_manipulator_x.urdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/open_manipulator_x.urdf)**:
-   * Created top-level evaluated URDF inside `config/` to eliminate MoveIt 2 launch-time fallback warnings (`Cannot infer URDF ...`).
+   * Created top-level evaluated URDF inside `config/` to eliminate MoveIt 2 launch-time fallback warnings (`Cannot infer URDF ...`), with hardware calibration offsets applied to both `joint3` (`+45°`, `rpy="0 0.78539816339 0"`) and `joint4` (`+45°`, `rpy="0 0.78539816339 0"`).
 3. **[`launch/open_manipulator_x_moveit.launch.py`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/launch/open_manipulator_x_moveit.launch.py)**:
    * Updated `MoveItConfigsBuilder` parameters to explicitly load `config/open_manipulator_x.urdf` and `config/open_manipulator_x.srdf`.
 4. **[`config/moveit.rviz`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/moveit.rviz)**:
@@ -53,7 +53,16 @@ This document provides a complete, itemized technical record of all modification
 ---
 
 ### D. Robot Description Updates (`open_manipulator/open_manipulator_description/`)
-1. **[`ros2_control/open_manipulator_x_position.ros2_control.xacro`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_description/ros2_control/open_manipulator_x_position.ros2_control.xacro)**:
+1. **Kinematic Origin Offsets (Hardware Servo Horn Calibration)**:
+   * **Joint 3 (+45° / +0.7854 rad Pitch Offset)**:
+     * Files: [`urdf/open_manipulator_x/open_manipulator_x_arm.urdf.xacro`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_description/urdf/open_manipulator_x/open_manipulator_x_arm.urdf.xacro#L113) & [`urdf/open_manipulator_x/open_manipulator_x.urdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_description/urdf/open_manipulator_x/open_manipulator_x.urdf#L98) & [`moveit_config/config/open_manipulator_x.urdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/open_manipulator_x.urdf#L98).
+     * Modification: Updated Joint 3 origin orientation from `rpy="0 0 0"` to `rpy="0 ${pi/4} 0"` (URDF: `rpy="0 0.78539816339 0"`).
+     * Rationale: Calibrates the physical servo horn spline mounting alignment for Joint 3 (elbow-to-forearm link), ensuring link 4 visuals and collisions in RViz/MoveIt accurately match the physical robot arm pitch.
+   * **Joint 4 (+45° / +0.7854 rad Pitch Offset)**:
+     * Files: [`urdf/open_manipulator_x/open_manipulator_x_arm.urdf.xacro`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_description/urdf/open_manipulator_x/open_manipulator_x_arm.urdf.xacro#L149) & [`urdf/open_manipulator_x/open_manipulator_x.urdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_description/urdf/open_manipulator_x/open_manipulator_x.urdf#L128) & [`moveit_config/config/open_manipulator_x.urdf`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_moveit_config/config/open_manipulator_x.urdf#L128).
+     * Modification: Updated Joint 4 origin orientation from `rpy="0 0 0"` to `rpy="0 ${pi/4} 0"` (URDF: `rpy="0 0.78539816339 0"`).
+     * Rationale: Compensates for the physical servo horn 45° mounting orientation of the wrist/gripper assembly, bringing simulation, collision meshes, and planning frames into exact alignment with the physical robot without altering driver firmware or joint zero registers.
+2. **[`ros2_control/open_manipulator_x_position.ros2_control.xacro`](file:///home/vla/VLA/openManipulator/open_manipulator/open_manipulator_description/ros2_control/open_manipulator_x_position.ros2_control.xacro)**:
    * Added `<param name="initial_value">` to position state interfaces for joints 1-4 and gripper:
      * `joint1`: `0.6090` rad (+34.9°)
      * `joint2`: `-1.3806` rad (-79.1°)

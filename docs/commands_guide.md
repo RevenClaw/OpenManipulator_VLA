@@ -10,7 +10,7 @@ Whenever you enter the Docker container or make code changes, build the workspac
 
 ```bash
 cd /root/ros2_ws
-colcon build --symlink-install --packages-select custom_package open_manipulator_moveit_config
+colcon build --symlink-install --packages-select custom_package open_manipulator_moveit_config open_manipulator_description open_manipulator_bringup
 source /root/ros2_ws/install/setup.bash
 ```
 
