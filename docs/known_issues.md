@@ -114,3 +114,14 @@ deferred. All paths are relative to `open_manipulator/`.
 * **Fix:** After the `z` move a menu asks [1] return to session home (loop, `z` armed again) or [2] quit. Quit calls
   `set_torque(False)`, shuts down an explicit `SingleThreadedExecutor`, joins the spin thread, then calls `rclpy.shutdown()`. An
   `OnProcessExit` → `Shutdown` handler in `open_manipulator_x_interactive.launch.py` ends the launch when the node exits.
+
+## 10. `vla_bridge` has not run on ROS or hardware yet  *(🔧 new 2026-10-30, not yet tested on hardware)*
+
+* **Files:** `custom_package/custom_package/vla_bridge.py`, `vla_safety.py`, `config/vla_bridge.yaml`, `launch/vla_bridge.launch.py`
+* **State:** `test/test_vla_safety.py` passes (11 tests). The node's logic was exercised off-ROS (ROS stubbed, a simulated arm following the
+  published trajectories, against `vla_layer/scripts/fake_policy_server.py`): a normal 15 s run (34 chunks, 0 holds, ≤ 0.25 rad/s) and all
+  six fault drills (nan, jump, below_table, stall, disconnect → hold + disable; out_of_range → clamped) behaved as designed. That run found
+  and fixed two bugs: the speed cap was per step instead of per second (0.58 rad/s seen), and a lost server connection resumed silently.
+* **Not yet verified:** building with colcon, real ROS timing, the JTC's handling of chunk replacement, the gripper action, and anything on the
+  arm. Test ladder: `vla_layer/docs/PHASE3_GUIDE.md` §7 (mock hardware → fault drills → shadow → live at 0.3 rad/s).
+

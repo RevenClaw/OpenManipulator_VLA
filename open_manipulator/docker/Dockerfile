@@ -50,6 +50,11 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+# Policy-server client for custom_package/vla_bridge (pinned to the openpi commit vla_layer serves with).
+# Only the small client package: numpy, msgpack, websockets, pillow. No JAX/openpi/GPU.
+RUN pip install --break-system-packages \
+    "openpi-client @ git+https://github.com/Physical-Intelligence/openpi.git@215abfb217dbac7d5f1273282331b9b1866c0479#subdirectory=packages/openpi-client"
+
 ENV COLCON_WS=/root/ros2_ws
 WORKDIR ${COLCON_WS}
 

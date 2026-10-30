@@ -122,3 +122,41 @@ ros2 run custom_package log_joint_states
 ```bash
 ros2 run custom_package log_joint_states --ros-args -p log_rate_hz:=10.0
 ```
+
+---
+
+## 🤖 Step 5: VLA Bridge — let a policy server drive the arm (*not yet tested on hardware*)
+
+Streams action chunks from the π0.5 policy server (`vla_layer`) to the arm behind a safety layer. Design and test ladder:
+`vla_layer/docs/PHASE3_GUIDE.md`. **Starts disabled.** Keep a hand on the hardware e-stop when live.
+
+**Once per container:** `openpi-client` is in the Dockerfile; in an older container install it by hand:
+```bash
+pip install --break-system-packages "openpi-client @ git+https://github.com/Physical-Intelligence/openpi.git@215abfb#subdirectory=packages/openpi-client"
+```
+
+**Rung 1, mock hardware (no arm):**
+```bash
+# T1: simulated arm
+ros2 launch custom_package open_manipulator_x_interactive.launch.py use_mock_hardware:=true
+# T2 (on the server or this PC, outside ROS): python vla_layer/scripts/fake_policy_server.py
+# T3: bridge with terminal menu (e = enable, d = disable, s = status, q = quit)
+ros2 run custom_package vla_bridge --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/vla_bridge.yaml -p server_host:=<server-ip>
+```
+Fault drills (mock hardware only): restart the fake server with `--fault nan|jump|out_of_range|below_table|stall|disconnect`;
+each must end in a hold with the reason printed (`out_of_range` instead keeps running with the joint clamped).
+
+**Rung 3, shadow mode on the real arm** (the arm does not move; watch `/vla_bridge/preview_path` in RViz):
+```bash
+ros2 launch custom_package vla_bridge.launch.py server_host:=<server-ip> shadow:=true
+ros2 service call /vla_bridge/enable std_srvs/srv/SetBool "{data: true}"
+```
+
+**Rung 4, live on the real arm:** same without `shadow:=true`. Stop it with any of:
+```bash
+ros2 service call /vla_bridge/enable std_srvs/srv/SetBool "{data: false}"   # hold + disable
+ros2 topic pub --once /vla_bridge/estop std_msgs/msg/Bool "{data: true}"      # latched e-stop
+ros2 topic echo /vla_bridge/status                                             # why it stopped
+```
+Server address: the A30's IP, or `localhost` through `ssh -N -L 4000:localhost:4000 shradul@iras-hub`.

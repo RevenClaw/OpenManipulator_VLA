@@ -27,6 +27,7 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
   - `ee_commander.py` — Cartesian goals. Closed-form 4-DOF IK (`inverse_kinematics`, `forward_kinematics`) → MoveIt `/move_action`
     (plan + execute) → gripper via `GripperCommand`. Inputs: terminal `x y z pitch° [grip]` or topic `/ee_goal`
     (`std_msgs/Float64MultiArray` `[x, y, z, pitch_rad, gripper(1 open/0 close/-1 keep)]`). Latest-goal-wins queue, no preemption.
+  - `vla_bridge.py` + `vla_safety.py` — π0.5 policy server → arm, behind a safety layer (see "VLA command interface").
   - `log_joint_states.py`, `record_home_position.py`
   - `launch/open_manipulator_x_interactive.launch.py` — hardware bringup + homing node (main launch).
 
@@ -58,12 +59,16 @@ ros2 run custom_package ee_commander                                            
 ```
 Hardware changes are tested by the user on the real arm; mark fixes "not yet tested on hardware" in `known_issues.md` until confirmed.
 
-## VLA command interface (recommended design, not yet implemented)
+## VLA command interface
 - Discrete, low-rate goals (≤ ~1 Hz, collision-checked): `/ee_goal` → `ee_commander` (exists).
-- Streaming VLA action chunks (planned): VLA publishes absolute joint targets as a `trajectory_msgs/JointTrajectory` chunk to a
-  `custom_package` safety bridge (`vla_bridge`), which clamps limits, rate-limits, checks staleness/watchdog, and forwards to
-  `/arm_controller/joint_trajectory`; gripper thresholded with hysteresis → `/gripper_controller/gripper_cmd`.
-  EE-space chunks `[x, y, z, pitch, grip]` are converted with `ee_commander.inverse_kinematics`. No MoveIt in the streaming path.
+- Streaming π0.5 action chunks: **`vla_bridge`** (exists, *not yet tested on hardware*, known issue #10). The bridge itself is the
+  websocket **client** of the policy server in the sibling repo `vla_layer` (openpi protocol, port 4000; `openpi-client` installed by the
+  Dockerfile). It sends observations (joints by name, gripper 0 open..1 closed, two 224×224 RGB images, prompt) and gets `(10, 5)` joint-space
+  chunks. Safety lives in `vla_safety.py` (pure numpy, `test/test_vla_safety.py`): starts disabled, NaN rejection, late-step dropping,
+  limits − 0.05 rad, time-based 0.3 rad/s speed cap, start-jump check, fingertip ≥ 2 cm, watchdog, lost connection, e-stop topic.
+  Output: one multi-point `JointTrajectory` per chunk → `/arm_controller/joint_trajectory`; gripper `GripperCommand` with 0.6/0.4 hysteresis.
+  No MoveIt in the streaming path. Observation keys and gripper formula must match `vla_layer/omx_pi05`
+  (`vla_layer/tests/test_bridge_contract.py`). Design and test ladder: `vla_layer/docs/PHASE3_GUIDE.md`.
 
 ## Conventions
 - Python nodes: ROS 2 rclpy, explicit `SingleThreadedExecutor` + spin thread, terminal UI with emoji status prints (match existing style).

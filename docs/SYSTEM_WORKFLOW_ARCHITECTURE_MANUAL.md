@@ -233,6 +233,14 @@ flowchart TD
 * **Type**: Diagnostic telemetry node.
 * **Purpose**: Subscribes to `/joint_states` and logs formatted joint angles in both Radians and Degrees at a throttled, human-readable frequency (default: 5 Hz).
 
+### 7. `vla_bridge` (Package: `custom_package`) — *not yet tested on hardware*
+* **Type**: Policy-to-controller bridge with a safety layer (15 Hz control loop + inference worker thread).
+* **Purpose**: Sends observations (`/joint_states`, two camera images, prompt) to the π0.5 policy server over a websocket, receives
+  `(10, 5)` action chunks, drops steps already in the past, applies the safety layer (`vla_safety.py`: NaN rejection, joint limits − 0.05 rad,
+  time-based 0.3 rad/s speed cap, start-jump check, fingertip ≥ 2 cm, watchdog, connection loss, e-stop) and sends one multi-point
+  trajectory per chunk to `arm_controller`; the gripper goes through `GripperCommand` with hysteresis. Starts disabled; any fault holds
+  and disables. `shadow:=true` publishes to `/vla_bridge/preview` only. Design: `vla_layer/docs/PHASE3_GUIDE.md`.
+
 ---
 
 ## 5. The Lifecycle of a Motion Command: From Coordinate to Stator Coil
@@ -327,6 +335,10 @@ Base ─── Shoulder ─── Elbow                                         
 | `/tf` | `tf2_msgs/msg/TFMessage` | `robot_state_publisher` | Dynamic coordinate frame transformations across the robot. |
 | `/tf_static` | `tf2_msgs/msg/TFMessage` | `robot_state_publisher` | Static offsets between fixed structural robot links. |
 | `/dynamixel_hardware_interface/dxl_state` | `dynamixel_interfaces/msg/DynamixelState` | `dynamixel_hardware_interface` | Raw actuator telemetry (voltages, temperatures, error flags). |
+| `/arm_controller/joint_trajectory` | `trajectory_msgs/msg/JointTrajectory` | `vla_bridge` | One multi-point trajectory per action chunk (replaces the running one). |
+| `/vla_bridge/estop` | `std_msgs/msg/Bool` | (operator) | `true` = hold + disable, latched until `false`. |
+| `/vla_bridge/status` | `std_msgs/msg/String` | `vla_bridge` | JSON: enabled, latency, steps remaining, holds, last fault (2 Hz). |
+| `/vla_bridge/preview`, `/vla_bridge/preview_path` | `JointTrajectory`, `visualization_msgs/msg/Marker` | `vla_bridge` | Shadow-mode commands and the planned fingertip path for RViz. |
 
 ### Core ROS 2 Services
 | Service Name | Service Type | Server Node | Description |
@@ -334,9 +346,10 @@ Base ─── Shoulder ─── Elbow                                         
 | `/dynamixel_hardware_interface/set_dxl_torque` | `std_srvs/srv/SetBool` | `dynamixel_hardware_interface` | Enables (`true`) or disables (`false`) motor holding torque. |
 | `/dynamixel_hardware_interface/reboot_dxl` | `dynamixel_interfaces/srv/RebootDxl` | `dynamixel_hardware_interface` | Clears hardware error states (e.g. overload `0x20`) by rebooting actuators. |
 | `/go_home_and_quit` | `std_srvs/srv/Trigger` | `interactive_homing_node` | Triggers minimum-stress parking trajectory and clean shutdown. |
+| `/vla_bridge/enable` | `std_srvs/srv/SetBool` | `vla_bridge` | `true` enables streaming (refused until warmed up, sensors fresh, e-stop released); `false` holds. |
 
 ### Core ROS 2 Actions
 | Action Name | Action Type | Server Node | Client Nodes |
 | :--- | :--- | :--- | :--- |
 | `/arm_controller/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | `arm_controller` | `move_group`, `interactive_homing_node` |
-| `/gripper_controller/gripper_cmd` | `control_msgs/action/GripperCommand` | `gripper_controller` | `move_group` |
+| `/gripper_controller/gripper_cmd` | `control_msgs/action/GripperCommand` | `gripper_controller` | `move_group`, `ee_commander`, `vla_bridge` |

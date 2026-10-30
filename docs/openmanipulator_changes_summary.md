@@ -17,7 +17,7 @@ This document provides a complete, itemized technical record of all modification
 ### A. New Custom Package (`open_manipulator/custom_package/`)
 1. **[`package.xml`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/package.xml)** & **[`setup.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/setup.py)**:
    * Created standard Python ROS 2 package configuration.
-   * Registered 5 executable entry points: `record_home_position`, `interactive_homing_node`, `log_joint_states`, `joint_commander`, and `ee_commander` (Cartesian end-effector goals: closed-form IK + MoveIt plan/execute, see `commands_guide.md` Step 3b).
+   * Registered 6 executable entry points: `record_home_position`, `interactive_homing_node`, `log_joint_states`, `joint_commander`, `ee_commander`, and `vla_bridge` (see item 6) (Cartesian end-effector goals: closed-form IK + MoveIt plan/execute, see `commands_guide.md` Step 3b).
 2. **[`custom_package/interactive_homing_node.py`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/custom_package/interactive_homing_node.py)**:
    * **Instant Torque Unlock**: Automatically invokes `/dynamixel_hardware_interface/set_dxl_torque(enable=false)` on node startup so the user can position the physical arm freely by hand.
    * **Option 1 (Manual Hand Pose)**: Prompts user to position arm and press `ENTER`. `arm_controller` is deactivated (`/controller_manager/switch_controller`) while the arm is moved by hand. After `ENTER`, torque is enabled and `arm_controller` is re-activated, so it holds the new pose instead of pulling back to its old hold target.
@@ -29,6 +29,17 @@ This document provides a complete, itemized technical record of all modification
    * Launch file spawning `ros2_control_node`, `robot_state_publisher`, `joint_state_broadcaster`, `arm_controller`, `gripper_controller`, and `interactive_homing_node`.
 5. **[`custom_package/config/configured_home_position.yaml`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/config/configured_home_position.yaml)**:
    * Configured home pose values: `[0.6090, -1.3622, 1.3898, -0.0154]`.
+6. **`custom_package/vla_bridge.py`** + **`custom_package/vla_safety.py`** (2026-10-30, *not yet tested on hardware*):
+   * `vla_bridge` (6th entry point) streams action chunks from the π0.5 policy server (`vla_layer`, openpi websocket, port 4000) to
+     `arm_controller` (one multi-point `JointTrajectory` per chunk on `/arm_controller/joint_trajectory`) and `gripper_controller`
+     (`GripperCommand`, 0.6/0.4 hysteresis). Observations: `/joint_states` (joints by name, gripper normalized 0 open..1 closed),
+     main + wrist camera (RGB, 224×224 `resize_with_pad`) or black frames (`fake_images`), prompt.
+   * Safety layer (`vla_safety.py`, pure numpy, unit-tested in `test/test_vla_safety.py`): starts disabled; NaN rejection;
+     late-step dropping; joint limits − 0.05 rad; **time-based speed cap 0.3 rad/s** from the measured position; start-jump
+     check 0.15 rad; fingertip height ≥ 2 cm (FK); watchdog (`/joint_states` 0.1 s, images 0.2 s, chunk 1 s); lost server
+     connection; e-stop topic. Any fault holds the arm and disables. `shadow:=true` publishes to `/vla_bridge/preview` only.
+   * `config/vla_bridge.yaml`, `launch/vla_bridge.launch.py`. Design: `vla_layer/docs/PHASE3_GUIDE.md`.
+   * `docker/Dockerfile` installs `openpi-client` (pinned to openpi `215abfb`, the commit the server uses).
 
 ---
 

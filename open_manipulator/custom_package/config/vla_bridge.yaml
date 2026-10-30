@@ -1,0 +1,28 @@
+# vla_bridge parameters. See custom_package/vla_bridge.py and vla_layer/docs/PHASE3_GUIDE.md.
+vla_bridge:
+  ros__parameters:
+    server_host: "localhost"          # A30 server IP, or localhost via: ssh -N -L 4000:localhost:4000 shradul@iras-hub
+    server_port: 4000
+    prompt: ""                        # exactly the task string used in the demos
+    fps: 15.0                         # must match the training data
+
+    # Safety layer
+    max_joint_vel: 0.3                # rad/s per joint. Start slow (joint2 overload 0x20); raise only after live tests
+    limit_margin: 0.05                # rad kept clear of the URDF joint limits
+    max_start_jump: 0.15              # rad; a chunk starting farther from the arm is rejected
+    min_z: 0.02                       # m; fingertip height floor (forward kinematics)
+    joint_state_timeout: 0.1          # s
+    image_timeout: 0.2                # s
+    chunk_timeout: 1.0                # s without a new chunk while enabled -> hold + disable
+
+    # Gripper hysteresis on the model's 0 (open) .. 1 (closed) value
+    gripper_close_above: 0.6
+    gripper_open_below: 0.4
+    gripper_max_effort: 1.0
+
+    # Cameras (Phase 4). Until they exist, fake_images sends black 224x224 frames.
+    front_image_topic: "/camera/front/image_raw"
+    wrist_image_topic: "/camera/wrist/image_raw"
+    fake_images: true
+
+    shadow: false                     # true: publish to /vla_bridge/preview only, the arm does not move
