@@ -144,3 +144,15 @@ deferred. All paths are relative to `open_manipulator/`.
   cable before enabling depth or higher resolutions. Not yet run with the real arm or on the robot PC, and the test used Fast DDS;
   check the image rate again under `rmw_zenoh_cpp` (the container's interactive default). No wrist camera yet (black frames).
   Auto exposure / white balance are still on (Phase 4 plan T4.2 wants them fixed before recording demos).
+
+## 12. MoveIt reports the home and exit poses as self-colliding (`START_STATE_IN_COLLISION`)
+
+* **Files:** both SRDFs (`open_manipulator_moveit_config/config/open_manipulator_x.srdf`, `.../config/open_manipulator_x/open_manipulator_x.srdf`)
+* **Problem:** The tight-fold poses touch in MoveIt's collision model (`/check_state_validity`, 2026-10-14):
+  home `[0.6090, -1.3622, 1.3898, -0.0154]` → link4↔link2 0.09 mm; min-stress exit/rest pose → link4↔link2 0.5 mm,
+  link5↔link2 0.7 mm, link5↔link3 0.8 mm. Home with j3 2° less folded, and the zero pose, are collision-free.
+* **Symptom:** `ee_commander` (and MoveIt in RViz) fails with `START_STATE_IN_COLLISION (-10)` when the arm starts at home.
+  `joint_commander`, the homing node and `vla_bridge` are unaffected (no MoveIt).
+* **Workaround:** First move off home without MoveIt, e.g. `joint_commander`: `34.9 -78 77.6 -1 1` (j3 2° less folded).
+* **Fix options (undecided):** add `<disable_collisions link1="link2" link2="link4" reason="User"/>` to both SRDFs (keeps the
+  home pose; also link2↔link5 and link3↔link5 to plan from the rest pose), or unfold home by ~2° in j3 (all ~8 copies, issue #5).

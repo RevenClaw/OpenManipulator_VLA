@@ -1,7 +1,8 @@
 # OpenManipulator-X VLA Controller — Project Context
 
 ROS 2 **Jazzy** workspace (runs in Docker, `open_manipulator/docker/`, workspace at `/root/ros2_ws` inside the container) for a
-ROBOTIS **OpenMANIPULATOR-X** (4-DOF arm + 1 gripper, Dynamixel XM430, IDs 11–15, U2D2 on `/dev/ttyUSB1`, 1 Mbps).
+ROBOTIS **OpenMANIPULATOR-X** (4-DOF arm + 1 gripper, Dynamixel XM430, IDs 11–15, U2D2 on `/dev/ttyUSB0` or `/dev/ttyUSB1`, 1 Mbps).
+The U2D2 port changes after a replug/reboot: check `ls -l /dev/serial/by-id/` (the FTDI entry) before launching; never assume it.
 Goal: a controller stack that a separate **VLA (vision-language-action) node** can drive.
 Work happens on branch `side`; `main` is the PR target.
 
@@ -51,10 +52,13 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
 
 ## Build & run (inside the container)
 ```bash
+zenohd                                                                                         # T0 Zenoh router: NOT auto-started; without it nodes can't discover each other and launches hang
 cd /root/ros2_ws
 colcon build --symlink-install --packages-select custom_package open_manipulator_moveit_config open_manipulator_description open_manipulator_bringup
 source install/setup.bash
-ros2 launch custom_package open_manipulator_x_interactive.launch.py port_name:=/dev/ttyUSB1   # T1 hardware + homing
+ls -l /dev/serial/by-id/                                                                       # which ttyUSBx is the U2D2
+ros2 launch custom_package open_manipulator_x_interactive.launch.py port_name:=/dev/ttyUSB0   # T1 hardware + homing
+#   no arm connected: ... open_manipulator_x_interactive.launch.py use_mock_hardware:=true
 ros2 launch open_manipulator_moveit_config open_manipulator_x_moveit.launch.py                # T2 MoveIt + RViz
 ros2 run custom_package ee_commander                                                           # T3 Cartesian goals
 ```
