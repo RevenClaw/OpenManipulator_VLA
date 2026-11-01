@@ -125,7 +125,7 @@ ros2 run custom_package log_joint_states --ros-args -p log_rate_hz:=10.0
 
 ---
 
-## 🤖 Step 5: VLA Bridge — let a policy server drive the arm (✅ tested 2026-11-01)
+## 🤖 Step 5: VLA Bridge — let a policy server drive the arm (✅ tested 2026-11-01; front camera tested 2026-11-01 on mock hardware)
 
 Streams action chunks from the π0.5 policy server (`vla_layer`) to the arm behind a safety layer. Design and test ladder:
 `vla_layer/docs/PHASE3_GUIDE.md`. **Starts disabled.** Keep a hand on the hardware e-stop when live.
@@ -134,6 +134,16 @@ Streams action chunks from the π0.5 policy server (`vla_layer`) to the arm behi
 ```bash
 pip install --break-system-packages typing_extensions "openpi-client @ git+https://github.com/Physical-Intelligence/openpi.git@215abfb#subdirectory=packages/openpi-client"
 ```
+
+**Front camera (Intel RealSense D435):** the bridge now uses it by default (`fake_images: false`). Start it before the bridge:
+```bash
+ros2 launch custom_package camera_front.launch.py        # /camera/front/color/image_raw, rgb8 640x480 @ 15 Hz, color only
+ros2 topic hz /camera/front/color/metadata               # expect ~15 Hz (hz on image_raw itself under-reads: the Python tool is slow on big images)
+```
+There is no wrist camera yet: `wrist_image_topic: ""` sends black frames for that view. To run without any camera, add
+`-p fake_images:=true` to the bridge. Check what the model receives: `ros2 run rqt_image_view rqt_image_view /vla_bridge/model_input/front`
+(the exact 224×224 image sent), `s` in the bridge shows `image_age_ms`, and `fake_policy_server.py --save-images <dir>` on the server
+saves the received images as PNG and logs their shape every 5 s.
 
 **Rung 1, mock hardware (no arm):**
 ```bash

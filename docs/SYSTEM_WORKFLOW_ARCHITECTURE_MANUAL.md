@@ -240,6 +240,10 @@ flowchart TD
   time-based 0.3 rad/s speed cap, start-jump check, fingertip ≥ 2 cm, watchdog, connection loss, e-stop) and sends one multi-point
   trajectory per chunk to `arm_controller`; the gripper goes through `GripperCommand` with hysteresis. Starts disabled; any fault holds
   and disables. `shadow:=true` publishes to `/vla_bridge/preview` only. Design: `vla_layer/docs/PHASE3_GUIDE.md`.
+* **Camera input**: front = `/camera/front/color/image_raw` from `realsense2_camera` (launched by `custom_package/launch/camera_front.launch.py`,
+  node `/camera/front`, rgb8 640×480 @ 15 Hz, color only), subscribed with reliable QoS (depth 1); wrist = black frames until a wrist
+  camera exists. Each observation converts the latest frame to RGB 224×224 (`resize_with_pad`) and republishes it on
+  `/vla_bridge/model_input/front` (`sensor_msgs/Image`, stamped like the camera frame).
 
 ---
 

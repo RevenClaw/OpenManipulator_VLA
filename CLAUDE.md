@@ -28,6 +28,7 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
     (plan + execute) → gripper via `GripperCommand`. Inputs: terminal `x y z pitch° [grip]` or topic `/ee_goal`
     (`std_msgs/Float64MultiArray` `[x, y, z, pitch_rad, gripper(1 open/0 close/-1 keep)]`). Latest-goal-wins queue, no preemption.
   - `vla_bridge.py` + `vla_safety.py` — π0.5 policy server → arm, behind a safety layer (see "VLA command interface").
+  - `launch/camera_front.launch.py` — RealSense D435 front camera (color only, 640×480 @ 15 Hz) → `/camera/front/color/image_raw`.
   - `log_joint_states.py`, `record_home_position.py`
   - `launch/open_manipulator_x_interactive.launch.py` — hardware bringup + homing node (main launch).
 
@@ -64,7 +65,9 @@ Hardware changes are tested by the user on the real arm; mark fixes "not yet tes
 - Streaming π0.5 action chunks: **`vla_bridge`** (exists, ✅ tested 2026-11-01, Phase 3 done, known issue #10). The bridge itself is the
   websocket **client** of the policy server in the sibling repo `vla_layer` (openpi protocol, port 4000; `openpi-client` installed by the
   Dockerfile). It sends observations (joints by name, gripper 0 open..1 closed, two 224×224 RGB images, prompt) and gets `(10, 5)` joint-space
-  chunks. Safety lives in `vla_safety.py` (pure numpy, `test/test_vla_safety.py`): starts disabled, NaN rejection, late-step dropping,
+  chunks. Front image = RealSense (`camera_front.launch.py`, subscribed with **reliable** QoS: best effort dropped ~40 % of the ~900 KB
+  frames); wrist = black frames until a wrist camera exists (`wrist_image_topic: ""`). Images sent are republished on
+  `/vla_bridge/model_input/<view>`. Safety lives in `vla_safety.py` (pure numpy, `test/test_vla_safety.py`): starts disabled, NaN rejection, late-step dropping,
   limits − 0.05 rad, time-based 0.3 rad/s speed cap, start-jump check, fingertip ≥ 2 cm, watchdog, lost connection, e-stop topic.
   Output: one multi-point `JointTrajectory` per chunk → `/arm_controller/joint_trajectory`; gripper `GripperCommand` with 0.6/0.4 hysteresis.
   No MoveIt in the streaming path. Observation keys and gripper formula must match `vla_layer/omx_pi05`

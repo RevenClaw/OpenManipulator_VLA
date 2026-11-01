@@ -132,3 +132,15 @@ deferred. All paths are relative to `open_manipulator/`.
   works (smooth motion in RViz), the fault drills were tested, and the shadow switch behaves as designed (shadow on: the arm stays
   still; shadow off: the arm moves). Latency from the robot PC is not logged yet. Test ladder: `vla_layer/docs/PHASE3_GUIDE.md` §7.
 
+## 11. Front camera input to `vla_bridge`  *(🔧 new 2026-11-01, not yet tested with the real arm)*
+
+* **Files:** `custom_package/launch/camera_front.launch.py`, `custom_package/custom_package/vla_bridge.py`, `config/vla_bridge.yaml`
+* **Tested 2026-11-01** on the development laptop (D435 serial 927522071177, firmware 5.17.3.10) with mock hardware and the fake policy
+  server: 30 s enabled, 84 chunks, 0 holds, newest frame ≤ 68 ms old, round trip ~153 ms; the server received 224×224×3 uint8 front
+  images showing the scene (correct colours, letterbox bars from 640×480) and black wrist images.
+* **Found and fixed:** with best-effort QoS the bridge received only ~9 Hz with gaps up to 0.46 s (each ~900 KB frame is many packets;
+  losing one loses the frame) and faulted with `camera images stale (front)`. Reliable QoS, depth 1: 14.9 Hz, max gap 0.079 s.
+* **Open:** the D435 was on a USB 2.1 link (the driver warns "Reduced performance"); 640×480 color at 15 Hz fits, but use a USB 3 port and
+  cable before enabling depth or higher resolutions. Not yet run with the real arm or on the robot PC, and the test used Fast DDS;
+  check the image rate again under `rmw_zenoh_cpp` (the container's interactive default). No wrist camera yet (black frames).
+  Auto exposure / white balance are still on (Phase 4 plan T4.2 wants them fixed before recording demos).

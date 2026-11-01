@@ -6,7 +6,9 @@
 # behind a safety layer. The only path by which a learned policy can move the arm.
 #
 #   1. Builds observations: /joint_states (joint1..4 rad + gripper normalized 0 open .. 1 closed),
-#      main + wrist camera images (RGB, resize_with_pad to 224x224, or black frames with fake_images:=true), prompt.
+#      main + wrist camera images (RGB, resize_with_pad to 224x224), prompt. A view whose topic is '' (no camera yet)
+#      gets black frames; fake_images:=true makes both views black. The exact 224x224 images sent are republished on
+#      ~/model_input/<front|wrist> for checking (rqt_image_view).
 #   2. A worker thread sends them to the server and receives (10, 5) chunks: 10 steps of [j1..j4, gripper].
 #      The next chunk is requested before the current one runs out, so the arm never waits.
 #   3. Each chunk passes the safety layer (custom_package/vla_safety.py): NaN rejection, stale-step dropping,
@@ -43,6 +45,8 @@ from rclpy.action import ActionClient
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
@@ -92,9 +96,10 @@ class VLABridgeNode(Node):
         self.declare_parameter('joint_state_timeout', 0.1)     # s
         self.declare_parameter('image_timeout', 0.2)           # s
         self.declare_parameter('chunk_timeout', 1.0)           # s without a new chunk while enabled
-        self.declare_parameter('front_image_topic', '/camera/front/image_raw')
-        self.declare_parameter('wrist_image_topic', '/camera/wrist/image_raw')
-        self.declare_parameter('fake_images', True)            # black frames until the cameras exist (Phase 4)
+        self.declare_parameter('front_image_topic', '/camera/front/color/image_raw')  # RealSense, camera_front.launch.py
+        self.declare_parameter('wrist_image_topic', '')        # '' = no wrist camera yet: black frames for that view
+        self.declare_parameter('fake_images', False)           # True: black frames for both views, no cameras needed
+        self.declare_parameter('image_reliable_qos', True)     # False only for a camera that publishes best effort
         self.declare_parameter('shadow', False)                # publish to ~/preview only; the arm does not move
 
         p = self.get_parameter
@@ -112,6 +117,8 @@ class VLABridgeNode(Node):
         self.chunk_timeout = float(p('chunk_timeout').value)
         self.min_lead = 0.5 / self.fps  # skip chunk steps due sooner than half a period (see vla_safety.first_future_step)
         self.fake_images = bool(p('fake_images').value)
+        topics = {'front': p('front_image_topic').value, 'wrist': p('wrist_image_topic').value}
+        self.cameras = {} if self.fake_images else {n: t for n, t in topics.items() if t}  # views with a real camera
         self.shadow = bool(p('shadow').value)
         self.hysteresis = S.GripperHysteresis(
             close_above=float(p('gripper_close_above').value), open_below=float(p('gripper_open_below').value)
@@ -154,11 +161,13 @@ class VLABridgeNode(Node):
 
         self.create_subscription(JointState, '/joint_states', self.joint_state_callback, 10)
         self.create_subscription(Bool, '~/estop', self.estop_callback, 10)
-        if not self.fake_images:
-            for name, topic in (('front', p('front_image_topic').value), ('wrist', p('wrist_image_topic').value)):
-                self.create_subscription(
-                    Image, topic, lambda msg, n=name: self.image_callback(n, msg), qos_profile_sensor_data
-                )
+        # Reliable, latest frame only: a 640x480 frame is ~900 KB, split into many packets; best effort loses the whole
+        # frame when one packet drops (measured: 9 Hz with 0.46 s gaps from a 15 Hz D435, vs 14.9 Hz reliable).
+        image_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE) if p('image_reliable_qos').value \
+            else qos_profile_sensor_data
+        for name, topic in self.cameras.items():
+            self.create_subscription(Image, topic, lambda msg, n=name: self.image_callback(n, msg), image_qos)
+        self.model_input_pubs = {n: self.create_publisher(Image, f'~/model_input/{n}', 1) for n in self.cameras}
         self.create_service(SetBool, '~/enable', self.enable_callback)
         self.create_timer(1.0 / self.fps, self.control_tick)
         self.create_timer(0.5, self.publish_status)
@@ -168,8 +177,14 @@ class VLABridgeNode(Node):
         mode = 'SHADOW (arm will not move)' if self.shadow else 'LIVE'
         self.get_logger().info(
             f'vla_bridge {mode}: server ws://{self.host}:{self.port}, {self.fps:.0f} Hz, '
-            f'max {self.max_vel:.2f} rad/s, fake_images={self.fake_images}. Starts DISABLED.'
+            f'max {self.max_vel:.2f} rad/s, cameras: {self.camera_summary()}. Starts DISABLED.'
         )
+
+    def camera_summary(self):
+        return ', '.join(f'{n}={self.cameras.get(n, "black frames")}' for n in ('front', 'wrist'))
+
+    def stale_cameras(self, now, image_times):
+        return [n for n in self.cameras if now - image_times[n] > self.image_timeout]
 
     # ------------------------------------------------------------------ inputs
     def joint_state_callback(self, msg: JointState):
@@ -227,8 +242,8 @@ class VLABridgeNode(Node):
             reason = 'policy server not connected / warmed up yet'
         elif now - self.joints_time > self.joint_state_timeout:
             reason = 'no fresh /joint_states'
-        elif not self.fake_images and any(now - t > self.image_timeout for t in self.image_times.values()):
-            reason = 'no fresh camera images'
+        elif self.stale_cameras(now, self.image_times):
+            reason = f'no fresh camera images ({", ".join(self.stale_cameras(now, self.image_times))})'
         if reason:
             print(f'  ❌  Not enabled: {reason}.')
             return False, reason
@@ -253,17 +268,26 @@ class VLABridgeNode(Node):
             t_obs = time.monotonic()
         obs = {S.OBS_STATE: np.append(joints, gripper).astype(np.float32), S.PROMPT: self.prompt}
         for name, key in (('front', S.OBS_FRONT), ('wrist', S.OBS_WRIST)):
-            if self.fake_images:
+            if name not in self.cameras:
                 obs[key] = np.zeros((S.IMAGE_SIZE, S.IMAGE_SIZE, 3), dtype=np.uint8)
                 continue
             msg = images[name]
             rgb = S.ros_image_to_rgb(msg.encoding, msg.height, msg.width, msg.step, msg.data)
             # Same preprocessing as the training dataset (vla_layer plan D8).
             obs[key] = image_tools.convert_to_uint8(image_tools.resize_with_pad(rgb, S.IMAGE_SIZE, S.IMAGE_SIZE))
+            self.publish_model_input(name, obs[key], msg.header)
         return obs, t_obs
+
+    def publish_model_input(self, name, image, header):
+        """Republishes the exact image sent to the policy (224x224 RGB), stamped like the camera frame it came from."""
+        h, w = image.shape[:2]
+        self.model_input_pubs[name].publish(
+            Image(header=header, height=h, width=w, encoding='rgb8', is_bigendian=0, step=w * 3, data=image.tobytes())
+        )
 
     def worker(self):
         client = None
+        waiting_printed = False
         while self.running:
             if client is None:
                 self.connected = self.warmed_up = False
@@ -278,7 +302,11 @@ class VLABridgeNode(Node):
                 self.connected = True
                 print(f'  ✅  Connected. Server metadata: {client.get_server_metadata()}')
             if not self.warmed_up:
-                if self.joints is None or (not self.fake_images and None in self.images.values()):
+                missing = [n for n in self.cameras if self.images[n] is None]
+                if self.joints is None or missing:
+                    if missing and not waiting_printed:
+                        print(f'  ⏳  Waiting for camera images: {", ".join(self.cameras[n] for n in missing)}')
+                        waiting_printed = True
                     time.sleep(0.2)  # wait for sensors before the warmup call
                     continue
                 print('  ⏳  Warmup inference (first call compiles the model, ~20 s)...')
@@ -332,8 +360,9 @@ class VLABridgeNode(Node):
             return self.fault(self.worker_fault)
         if now - joints_time > self.joint_state_timeout:
             return self.fault(f'/joint_states stale ({now - joints_time:.2f} s)')
-        if not self.fake_images and any(now - t > self.image_timeout for t in image_times.values()):
-            return self.fault('camera images stale')
+        stale = self.stale_cameras(now, image_times)
+        if stale:
+            return self.fault(f'camera images stale ({", ".join(stale)})')
         if new_chunk is not None and not self.apply_chunk(*new_chunk, joints, now):
             return
         if now - self.last_chunk_time > self.chunk_timeout:
@@ -444,6 +473,7 @@ class VLABridgeNode(Node):
             'connected': self.connected, 'warmed_up': self.warmed_up,
             'latency_ms': round(self.latency * 1000), 'steps_remaining': remaining,
             'max_effort': round(self.max_effort, 3), 'last_fault': self.last_fault, **self.counters,
+            'image_age_ms': {n: round((now - self.image_times[n]) * 1000) for n in self.cameras},
         }
         self.status_pub.publish(String(data=json.dumps(status)))
         return status
@@ -456,6 +486,7 @@ def print_header(node):
     print('=' * 66)
     print(f'  Server: ws://{node.host}:{node.port}   Mode: {"SHADOW (arm will not move)" if node.shadow else "LIVE"}')
     print(f'  Speed cap {node.max_vel:.2f} rad/s, {node.fps:.0f} Hz, prompt: "{node.prompt}"')
+    print(f'  Cameras: {node.camera_summary()}')
     print('  e = enable,  d = disable (hold),  s = status,  q = quit')
     print('  Also: /vla_bridge/enable (SetBool), /vla_bridge/estop (Bool), /vla_bridge/status')
     print('  Starts DISABLED. Keep a hand on the hardware e-stop when live.')

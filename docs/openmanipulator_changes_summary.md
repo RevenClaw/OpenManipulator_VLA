@@ -40,6 +40,14 @@ This document provides a complete, itemized technical record of all modification
      connection; e-stop topic. Any fault holds the arm and disables. `shadow:=true` publishes to `/vla_bridge/preview` only.
    * `config/vla_bridge.yaml`, `launch/vla_bridge.launch.py`. Design: `vla_layer/docs/PHASE3_GUIDE.md`.
    * `docker/Dockerfile` installs `openpi-client` (pinned to openpi `215abfb`, the commit the server uses).
+7. **Front camera for `vla_bridge`** (2026-11-01, tested with a D435 on mock hardware, *not yet with the real arm*):
+   * `launch/camera_front.launch.py`: wraps `realsense2_camera`'s `rs_launch.py` (namespace `camera`, name `front`), color only
+     (depth/infrared/IMU/pointcloud off), `640,480,15` → `/camera/front/color/image_raw` (rgb8). Args `serial_no`, `color_profile`.
+     `package.xml` exec-depends on `realsense2_camera` (already built in the Docker image).
+   * `vla_bridge`: `fake_images` now defaults to `false`; a view whose topic is `""` gets black frames and no staleness check
+     (wrist, for now); camera subscriptions use reliable QoS, depth 1 (`image_reliable_qos`), because best effort delivered only
+     9 Hz with 0.46 s gaps from the 15 Hz D435 and tripped the 0.2 s image watchdog; the exact 224×224 images sent are republished on
+     `~/model_input/<front|wrist>`; status shows `image_age_ms`; the warmup waits (with a message) until every camera has a frame.
 
 ---
 
