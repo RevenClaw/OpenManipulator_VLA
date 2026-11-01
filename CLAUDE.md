@@ -61,7 +61,7 @@ Hardware changes are tested by the user on the real arm; mark fixes "not yet tes
 
 ## VLA command interface
 - Discrete, low-rate goals (≤ ~1 Hz, collision-checked): `/ee_goal` → `ee_commander` (exists).
-- Streaming π0.5 action chunks: **`vla_bridge`** (exists, *not yet tested on hardware*, known issue #10). The bridge itself is the
+- Streaming π0.5 action chunks: **`vla_bridge`** (exists, ✅ tested 2026-11-01, Phase 3 done, known issue #10). The bridge itself is the
   websocket **client** of the policy server in the sibling repo `vla_layer` (openpi protocol, port 4000; `openpi-client` installed by the
   Dockerfile). It sends observations (joints by name, gripper 0 open..1 closed, two 224×224 RGB images, prompt) and gets `(10, 5)` joint-space
   chunks. Safety lives in `vla_safety.py` (pure numpy, `test/test_vla_safety.py`): starts disabled, NaN rejection, late-step dropping,

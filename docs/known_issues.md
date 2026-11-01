@@ -115,7 +115,7 @@ deferred. All paths are relative to `open_manipulator/`.
   `set_torque(False)`, shuts down an explicit `SingleThreadedExecutor`, joins the spin thread, then calls `rclpy.shutdown()`. An
   `OnProcessExit` → `Shutdown` handler in `open_manipulator_x_interactive.launch.py` ends the launch when the node exits.
 
-## 10. `vla_bridge` has not run on ROS or hardware yet  *(🔧 new 2026-10-30, not yet tested on hardware)*
+## 10. `vla_bridge` had not run on ROS or hardware yet  *(✅ resolved 2026-11-01)*
 
 * **Files:** `custom_package/custom_package/vla_bridge.py`, `vla_safety.py`, `config/vla_bridge.yaml`, `launch/vla_bridge.launch.py`
 * **State:** `test/test_vla_safety.py` passes (11 tests). The node's logic was exercised off-ROS (ROS stubbed, a simulated arm following the
@@ -128,6 +128,7 @@ deferred. All paths are relative to `open_manipulator/`.
   final hold; camera-conversion errors were reported as a lost server; `typing_extensions` was missing from the Dockerfile install.
   Re-tested off-ROS with a servo-lagging simulated arm: normal runs at 150/200/250 ms latency (steady speed within ~10 % of the planned
   path, plan never ran dry), all six drills, and re-enable after `stall`/`disconnect`.
-* **Not yet verified:** building with colcon, real ROS timing, the JTC's handling of chunk replacement, the gripper action, and anything on the
-  arm. Test ladder: `vla_layer/docs/PHASE3_GUIDE.md` §7 (mock hardware → fault drills → shadow → live at 0.3 rad/s).
+* **Resolved 2026-11-01 (Phase 3 done):** built with colcon and run in ROS against the fake policy server. Rung 1 on mock hardware
+  works (smooth motion in RViz), the fault drills were tested, and the shadow switch behaves as designed (shadow on: the arm stays
+  still; shadow off: the arm moves). Latency from the robot PC is not logged yet. Test ladder: `vla_layer/docs/PHASE3_GUIDE.md` §7.
 

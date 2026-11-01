@@ -233,7 +233,7 @@ flowchart TD
 * **Type**: Diagnostic telemetry node.
 * **Purpose**: Subscribes to `/joint_states` and logs formatted joint angles in both Radians and Degrees at a throttled, human-readable frequency (default: 5 Hz).
 
-### 7. `vla_bridge` (Package: `custom_package`) — *not yet tested on hardware*
+### 7. `vla_bridge` (Package: `custom_package`) — ✅ tested 2026-11-01
 * **Type**: Policy-to-controller bridge with a safety layer (15 Hz control loop + inference worker thread).
 * **Purpose**: Sends observations (`/joint_states`, two camera images, prompt) to the π0.5 policy server over a websocket, receives
   `(10, 5)` action chunks, drops steps already in the past, applies the safety layer (`vla_safety.py`: NaN rejection, joint limits − 0.05 rad,

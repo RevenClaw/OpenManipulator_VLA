@@ -29,7 +29,7 @@ This document provides a complete, itemized technical record of all modification
    * Launch file spawning `ros2_control_node`, `robot_state_publisher`, `joint_state_broadcaster`, `arm_controller`, `gripper_controller`, and `interactive_homing_node`.
 5. **[`custom_package/config/configured_home_position.yaml`](file:///home/vla/VLA/openManipulator/open_manipulator/custom_package/config/configured_home_position.yaml)**:
    * Configured home pose values: `[0.6090, -1.3622, 1.3898, -0.0154]`.
-6. **`custom_package/vla_bridge.py`** + **`custom_package/vla_safety.py`** (2026-10-30, *not yet tested on hardware*):
+6. **`custom_package/vla_bridge.py`** + **`custom_package/vla_safety.py`** (2026-10-30; ✅ tested 2026-11-01: mock hardware, fault drills, shadow/live switch):
    * `vla_bridge` (6th entry point) streams action chunks from the π0.5 policy server (`vla_layer`, openpi websocket, port 4000) to
      `arm_controller` (one multi-point `JointTrajectory` per chunk on `/arm_controller/joint_trajectory`) and `gripper_controller`
      (`GripperCommand`, 0.6/0.4 hysteresis). Observations: `/joint_states` (joints by name, gripper normalized 0 open..1 closed),

@@ -125,7 +125,7 @@ ros2 run custom_package log_joint_states --ros-args -p log_rate_hz:=10.0
 
 ---
 
-## 🤖 Step 5: VLA Bridge — let a policy server drive the arm (*not yet tested on hardware*)
+## 🤖 Step 5: VLA Bridge — let a policy server drive the arm (✅ tested 2026-11-01)
 
 Streams action chunks from the π0.5 policy server (`vla_layer`) to the arm behind a safety layer. Design and test ladder:
 `vla_layer/docs/PHASE3_GUIDE.md`. **Starts disabled.** Keep a hand on the hardware e-stop when live.
