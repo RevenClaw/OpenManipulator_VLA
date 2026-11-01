@@ -160,6 +160,14 @@ After `git pull`, rebuild so new launch files (e.g. `camera_front.launch.py`) ar
 ```bash
 cd /root/ros2_ws && colcon build --symlink-install --packages-select custom_package && source install/setup.bash
 ```
+<<<<<<< Updated upstream
+=======
+There is no wrist camera yet: `wrist_image_topic: ""` sends black frames for that view. To run without any camera, add
+`-p fake_images:=true` to the bridge. View the camera in RViz (`rviz2`, the image has no `rqt_image_view`): **Add → By topic →**
+`/camera/front/color/image_raw` **→ Image** for the live feed, `/vla_bridge/model_input/front` **→ Image** for the exact 224×224 image sent, `s` in the bridge shows `image_age_ms`, and `fake_policy_server.py` on the server logs the received joint state and
+images every 5 s (`🤖 state [...]  📷 front_image: (224, 224, 3) uint8 ...`); `--save-images <dir>` also saves the images (PNG) and
+the matching states and prompt (`observations.csv`).
+>>>>>>> Stashed changes
 
 ### 5a. Check the front camera on its own (no robot, no bridge)
 
