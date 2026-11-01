@@ -8,7 +8,7 @@
 #   1. Builds observations: /joint_states (joint1..4 rad + gripper normalized 0 open .. 1 closed),
 #      main + wrist camera images (RGB, resize_with_pad to 224x224), prompt. A view whose topic is '' (no camera yet)
 #      gets black frames; fake_images:=true makes both views black. The exact 224x224 images sent are republished on
-#      ~/model_input/<front|wrist> for checking (rqt_image_view).
+#      ~/model_input/<front|wrist> for checking (RViz Image display).
 #   2. A worker thread sends them to the server and receives (10, 5) chunks: 10 steps of [j1..j4, gripper].
 #      The next chunk is requested before the current one runs out, so the arm never waits.
 #   3. Each chunk passes the safety layer (custom_package/vla_safety.py): NaN rejection, stale-step dropping,

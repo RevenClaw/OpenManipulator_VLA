@@ -141,8 +141,8 @@ ros2 launch custom_package camera_front.launch.py        # /camera/front/color/i
 ros2 topic hz /camera/front/color/metadata               # expect ~15 Hz (hz on image_raw itself under-reads: the Python tool is slow on big images)
 ```
 There is no wrist camera yet: `wrist_image_topic: ""` sends black frames for that view. To run without any camera, add
-`-p fake_images:=true` to the bridge. Check what the model receives: `ros2 run rqt_image_view rqt_image_view /vla_bridge/model_input/front`
-(the exact 224×224 image sent), `s` in the bridge shows `image_age_ms`, and `fake_policy_server.py --save-images <dir>` on the server
+`-p fake_images:=true` to the bridge. View the camera in RViz (`rviz2`, the image has no `rqt_image_view`): **Add → By topic →**
+`/camera/front/color/image_raw` **→ Image** for the live feed, `/vla_bridge/model_input/front` **→ Image** for the exact 224×224 image sent, `s` in the bridge shows `image_age_ms`, and `fake_policy_server.py --save-images <dir>` on the server
 saves the received images as PNG and logs their shape every 5 s.
 
 **Rung 1, mock hardware (no arm):**
