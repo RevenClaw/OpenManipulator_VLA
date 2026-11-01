@@ -132,14 +132,15 @@ Streams action chunks from the π0.5 policy server (`vla_layer`) to the arm behi
 
 **Once per container:** `openpi-client` is in the Dockerfile; in an older container install it by hand:
 ```bash
-pip install --break-system-packages "openpi-client @ git+https://github.com/Physical-Intelligence/openpi.git@215abfb#subdirectory=packages/openpi-client"
+pip install --break-system-packages typing_extensions "openpi-client @ git+https://github.com/Physical-Intelligence/openpi.git@215abfb#subdirectory=packages/openpi-client"
 ```
 
 **Rung 1, mock hardware (no arm):**
 ```bash
-# T1: simulated arm
+# T1: simulated arm. It starts at HOME; the homing node's "torque service not available" errors are expected (no servos).
 ros2 launch custom_package open_manipulator_x_interactive.launch.py use_mock_hardware:=true
-# T2 (on the server or this PC, outside ROS): python vla_layer/scripts/fake_policy_server.py
+# T2, on the A30 server (its env already has omx_pi05 + openpi-client; stop serve.py first, it uses the same port):
+#     cd ~/vla/openpi/omx_pie0.5 && source scripts/env.sh && python scripts/fake_policy_server.py
 # T3: bridge with terminal menu (e = enable, d = disable, s = status, q = quit)
 ros2 run custom_package vla_bridge --ros-args --params-file \
     $(ros2 pkg prefix custom_package)/share/custom_package/config/vla_bridge.yaml -p server_host:=<server-ip>

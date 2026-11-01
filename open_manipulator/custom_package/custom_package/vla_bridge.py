@@ -14,12 +14,13 @@
 #   4. The safe steps go to arm_controller as ONE multi-point JointTrajectory; the gripper goes through
 #      gripper_controller's GripperCommand action with hysteresis, only when its state changes.
 #
-# Starts DISABLED. Any fault (stale joint states or images, no chunk, bad chunk, e-stop) holds the arm and disables.
+# Starts DISABLED. Any fault (stale joint states or images, no chunk, bad chunk, lost server, e-stop) holds the arm and
+# disables; only a new enable resumes.
 # shadow:=true runs everything but publishes only to ~/preview (+ RViz path marker): the arm does not move.
 #
 # Requires: the hardware launch with the arm homed, and a policy server
 #   (vla_layer: scripts/fake_policy_server.py for testing, scripts/serve.py for the real model).
-#   pip install openpi-client (see docker/Dockerfile).
+#   openpi-client + typing_extensions (installed by docker/Dockerfile).
 #
 # Usage:
 #   ros2 launch custom_package vla_bridge.launch.py server_host:=<server-ip> shadow:=true
@@ -109,13 +110,18 @@ class VLABridgeNode(Node):
         self.joint_state_timeout = float(p('joint_state_timeout').value)
         self.image_timeout = float(p('image_timeout').value)
         self.chunk_timeout = float(p('chunk_timeout').value)
+        self.min_lead = 0.5 / self.fps  # skip chunk steps due sooner than half a period (see vla_safety.first_future_step)
         self.fake_images = bool(p('fake_images').value)
         self.shadow = bool(p('shadow').value)
         self.hysteresis = S.GripperHysteresis(
             close_above=float(p('gripper_close_above').value), open_below=float(p('gripper_open_below').value)
         )
 
-        self.lock = threading.Lock()
+        self.lock = threading.Lock()            # sensor data shared with the worker thread
+        # Serializes everything that can command the arm: the control tick and the service/topic callbacks run on the
+        # executor thread, the e/d terminal commands on the main thread. Without it a disable could land between a tick's
+        # checks and its publish, and the arm would keep moving after the hold.
+        self.control_lock = threading.RLock()
         self.joints = None              # np (4,) rad
         self.gripper_norm = None        # 0 open .. 1 closed
         self.joints_time = 0.0          # monotonic time of the last /joint_states
@@ -127,7 +133,8 @@ class VLABridgeNode(Node):
         self.estop_latched = False
         self.warmed_up = False
         self.connected = False
-        self.connection_lost = False   # set by the worker; the control loop turns it into a fault
+        self.worker_fault = ''          # set by the worker (lost server, bad observation); the control loop faults on it
+        self.client = None              # the worker's WebsocketClientPolicy (closed to abort a stalled request)
         self.plan_times = None          # monotonic times of the steps sent to arm_controller
         self.plan_grip = None
         self.new_chunk = None           # (t_obs, chunk) from the worker
@@ -156,6 +163,8 @@ class VLABridgeNode(Node):
         self.create_timer(1.0 / self.fps, self.control_tick)
         self.create_timer(0.5, self.publish_status)
 
+        if not self.prompt:
+            self.get_logger().warn('prompt is empty: fine for the fake policy server, wrong for a trained model.')
         mode = 'SHADOW (arm will not move)' if self.shadow else 'LIVE'
         self.get_logger().info(
             f'vla_bridge {mode}: server ws://{self.host}:{self.port}, {self.fps:.0f} Hz, '
@@ -183,7 +192,11 @@ class VLABridgeNode(Node):
             self.image_times[name] = time.monotonic()
 
     def estop_callback(self, msg: Bool):
-        if msg.data:
+        with self.control_lock:
+            self._estop(msg.data)
+
+    def _estop(self, engaged):
+        if engaged:
             self.estop_latched = True
             if self.enabled:
                 self.fault('e-stop')
@@ -197,6 +210,10 @@ class VLABridgeNode(Node):
         return response
 
     def set_enabled(self, enable):
+        with self.control_lock:
+            return self._set_enabled(enable)
+
+    def _set_enabled(self, enable):
         now = time.monotonic()
         if not enable:
             if self.enabled:
@@ -220,7 +237,7 @@ class VLABridgeNode(Node):
             self.plan_times = self.plan_grip = None
             self.new_chunk = None
             self.inflight = True  # the first request below; the control loop must not send a second one
-        self.connection_lost = False
+        self.worker_fault = ''
         self.last_chunk_time = now
         self.enabled = True
         self.request_event.set()
@@ -257,6 +274,7 @@ class VLABridgeNode(Node):
                     print(f'  ❌  Connection failed: {e}. Retrying in 2 s.')
                     time.sleep(2.0)
                     continue
+                self.client = client
                 self.connected = True
                 print(f'  ✅  Connected. Server metadata: {client.get_server_metadata()}')
             if not self.warmed_up:
@@ -269,13 +287,21 @@ class VLABridgeNode(Node):
             self.request_event.clear()
             try:
                 obs, t_obs = self.observation()
+            except Exception as e:  # noqa: BLE001 - e.g. an unsupported image encoding; the server is fine
+                print(f'  ❌  Observation failed: {e}')
+                self.worker_fault = f'observation failed: {e}'
+                with self.lock:
+                    self.inflight = False
+                time.sleep(1.0)
+                continue
+            try:
                 t0 = time.monotonic()
                 chunk = client.infer(obs)['actions']
                 latency = time.monotonic() - t0
-            except Exception as e:  # noqa: BLE001 - connection lost or server error
+            except Exception as e:  # noqa: BLE001 - connection lost, aborted after a stall, or server error
                 print(f'  ❌  Inference failed: {e}')
-                client = None
-                self.connection_lost = True  # never resume silently on a (possibly different) server
+                client = self.client = None
+                self.worker_fault = 'policy server connection lost'  # never resume silently on a (possibly new) server
                 with self.lock:
                     self.inflight = False
                 continue
@@ -290,6 +316,10 @@ class VLABridgeNode(Node):
 
     # ------------------------------------------------------------------ control loop (fps)
     def control_tick(self):
+        with self.control_lock:
+            self._control_tick()
+
+    def _control_tick(self):
         if not self.enabled:
             return
         now = time.monotonic()
@@ -298,8 +328,8 @@ class VLABridgeNode(Node):
             image_times = dict(self.image_times)
             new_chunk, self.new_chunk = self.new_chunk, None
 
-        if self.connection_lost:
-            return self.fault('policy server connection lost')
+        if self.worker_fault:
+            return self.fault(self.worker_fault)
         if now - joints_time > self.joint_state_timeout:
             return self.fault(f'/joint_states stale ({now - joints_time:.2f} s)')
         if not self.fake_images and any(now - t > self.image_timeout for t in image_times.values()):
@@ -307,6 +337,7 @@ class VLABridgeNode(Node):
         if new_chunk is not None and not self.apply_chunk(*new_chunk, joints, now):
             return
         if now - self.last_chunk_time > self.chunk_timeout:
+            self.abort_inference()  # a stalled server would otherwise block the worker forever
             return self.fault(f'no chunk for {now - self.last_chunk_time:.2f} s')
 
         remaining = 0 if self.plan_times is None else int(np.sum(self.plan_times > now))
@@ -328,7 +359,7 @@ class VLABridgeNode(Node):
         except ValueError as e:
             self.fault(f'bad chunk: {e}')
             return False
-        k0 = S.first_future_step(t_obs, self.fps, len(chunk), now)
+        k0 = S.first_future_step(t_obs, self.fps, len(chunk), now, self.min_lead)
         if k0 >= len(chunk):
             self.counters['stale_chunks'] += 1  # arrived too late to use; the next one is already requested
             return True
@@ -385,6 +416,21 @@ class VLABridgeNode(Node):
         self.counters['holds'] += 1
         self.last_fault = reason
 
+    def abort_inference(self):
+        """Closes the websocket so a request stuck waiting on the server fails; the worker then reconnects."""
+        client = self.client
+        if client is None:
+            return
+
+        def close():
+            try:
+                client._ws.close()  # noqa: SLF001 - openpi-client exposes no timeout or abort
+            except Exception:  # noqa: BLE001 - already closed
+                pass
+
+        # The close handshake can wait up to 10 s on a hung server: never block the control loop (or e-stop) on it.
+        threading.Thread(target=close, daemon=True).start()
+
     def fault(self, reason):
         self.hold(reason)
         self.enabled = False
@@ -419,7 +465,7 @@ def print_header(node):
 def main(args=None):
     if websocket_client_policy is None:
         print('  ❌  openpi-client is not installed. In the container:')
-        print('      pip install --break-system-packages "openpi-client @ git+https://github.com/'
+        print('      pip install --break-system-packages typing_extensions "openpi-client @ git+https://github.com/'
               'Physical-Intelligence/openpi.git@215abfb#subdirectory=packages/openpi-client"')
         return
     rclpy.init(args=args)
@@ -437,8 +483,11 @@ def main(args=None):
         if not sys.stdin.isatty():
             # Started by ros2 launch: no keyboard. Control it with /vla_bridge/enable and /vla_bridge/estop.
             print('  ℹ️  No terminal input (launched). Use the /vla_bridge/enable service. Ctrl+C to stop.')
-            while spin_thread.is_alive():
-                spin_thread.join(timeout=0.5)
+            try:
+                while spin_thread.is_alive():
+                    spin_thread.join(timeout=0.5)
+            except KeyboardInterrupt:
+                pass
         while sys.stdin.isatty():
             try:
                 line = input('\n  >> ').strip().lower()
@@ -459,13 +508,17 @@ def main(args=None):
                 print('  ⚠️  Unknown command. e / d / s / q')
     finally:
         if node.enabled:
-            node.set_enabled(False)
+            try:
+                node.set_enabled(False)  # final hold; the arm also stops on its own when the trajectory ends
+            except Exception:  # noqa: BLE001 - Ctrl+C may already have shut the ROS context down
+                pass
         node.running = False
+        node.abort_inference()
         worker_thread.join(timeout=1.0)
         executor.shutdown()
         spin_thread.join(timeout=2.0)
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 if __name__ == '__main__':

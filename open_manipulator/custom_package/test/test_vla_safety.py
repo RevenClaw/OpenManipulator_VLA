@@ -43,6 +43,9 @@ def test_stale_steps_are_dropped():
     assert S.first_future_step(0.0, fps, 10, now=0.150) == 2
     assert S.first_future_step(0.0, fps, 10, now=0.0) == 0
     assert S.first_future_step(0.0, fps, 10, now=5.0) == 10  # whole chunk stale
+    # Step 2 is due at 200 ms; at now = 190 ms it is only 10 ms away, so with a half-period lead it is skipped too.
+    assert S.first_future_step(0.0, fps, 10, now=0.190) == 2
+    assert S.first_future_step(0.0, fps, 10, now=0.190, min_lead=0.5 / fps) == 3
 
 
 def test_clamp_keeps_margin_inside_limits():
@@ -82,9 +85,12 @@ def test_truncate_below_table():
     assert len(S.truncate_below_z(targets[:2], fk, 0.02)) == 2
 
 
-def test_request_threshold():
-    assert S.request_threshold_steps(0.150, 15.0) == 4
-    assert S.request_threshold_steps(0.0, 15.0) == 1
+def test_request_threshold_covers_latency_plus_tick_delay():
+    fps = 15.0
+    assert S.request_threshold_steps(0.150, fps) == 5
+    for latency in (0.0, 0.1, 0.15, 0.2, 0.25, 0.4):
+        r = S.request_threshold_steps(latency, fps)
+        assert (r - 1) / fps >= latency + 1 / fps - 1e-9  # what is left still covers round trip + one tick
 
 
 def test_gripper_hysteresis_no_chatter():

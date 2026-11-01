@@ -49,9 +49,13 @@ def step_times(t_obs, fps, n):
     return t_obs + (np.arange(n) + 1) / fps
 
 
-def first_future_step(t_obs, fps, n, now):
-    """Index of the first step not yet in the past (n if the whole chunk is stale)."""
-    return int(np.searchsorted(step_times(t_obs, fps, n), now, side='right'))
+def first_future_step(t_obs, fps, n, now, min_lead=0.0):
+    """Index of the first step due later than now + min_lead (n if none is).
+
+    min_lead (e.g. half a control period) keeps the first point from being due only milliseconds away: the controller
+    starts the new trajectory from the arm's measured position, so a near-instant first point forces it to brake or lurch.
+    """
+    return int(np.searchsorted(step_times(t_obs, fps, n), now + min_lead, side='right'))
 
 
 def clamp_joints(targets, lower, upper, margin):
@@ -88,8 +92,12 @@ def truncate_below_z(targets, fk, min_z):
 
 
 def request_threshold_steps(latency_s, fps):
-    """Request the next chunk when this many (or fewer) steps remain, so it arrives before the plan runs out."""
-    return int(math.ceil(latency_s * fps)) + 1
+    """Request the next chunk when this many (or fewer) steps remain, so it arrives before the plan runs out.
+
+    The request is made at a control tick and its result is applied at a later tick, which adds up to two periods on top
+    of the round trip: r remaining steps cover at least (r - 1) / fps seconds, and that must be >= latency + 1 / fps.
+    """
+    return int(math.ceil(latency_s * fps)) + 2
 
 
 class GripperHysteresis:
@@ -117,6 +125,6 @@ def ros_image_to_rgb(encoding, height, width, step, data):
     """sensor_msgs/Image fields (rgb8 or bgr8) -> uint8 (H, W, 3) RGB array, without cv_bridge."""
     if encoding not in ('rgb8', 'bgr8'):
         raise ValueError(f'unsupported image encoding {encoding!r} (use rgb8 or bgr8)')
-    rows = np.frombuffer(bytes(data), dtype=np.uint8).reshape(height, step)
+    rows = np.frombuffer(memoryview(data), dtype=np.uint8).reshape(height, step)  # no copy of the frame
     image = rows[:, : width * 3].reshape(height, width, 3)
     return np.ascontiguousarray(image[..., ::-1] if encoding == 'bgr8' else image)

@@ -122,6 +122,12 @@ deferred. All paths are relative to `open_manipulator/`.
   published trajectories, against `vla_layer/scripts/fake_policy_server.py`): a normal 15 s run (34 chunks, 0 holds, ≤ 0.25 rad/s) and all
   six fault drills (nan, jump, below_table, stall, disconnect → hold + disable; out_of_range → clamped) behaved as designed. That run found
   and fixed two bugs: the speed cap was per step instead of per second (0.58 rad/s seen), and a lost server connection resumed silently.
+* **Review 2026-10-30, fixed:** a terminal `d` could race the control loop and let one more trajectory out after the hold (now one lock
+  serializes all arm commands); a stalled server blocked the worker forever (now the connection is closed on chunk timeout and the worker
+  reconnects); the next-chunk request ignored the 15 Hz tick delay (threshold now `ceil(latency·fps) + 2`); Ctrl+C could raise during the
+  final hold; camera-conversion errors were reported as a lost server; `typing_extensions` was missing from the Dockerfile install.
+  Re-tested off-ROS with a servo-lagging simulated arm: normal runs at 150/200/250 ms latency (steady speed within ~10 % of the planned
+  path, plan never ran dry), all six drills, and re-enable after `stall`/`disconnect`.
 * **Not yet verified:** building with colcon, real ROS timing, the JTC's handling of chunk replacement, the gripper action, and anything on the
   arm. Test ladder: `vla_layer/docs/PHASE3_GUIDE.md` §7 (mock hardware → fault drills → shadow → live at 0.3 rad/s).
 
