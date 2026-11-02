@@ -24,12 +24,16 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
     [2] default home via 2-stage trajectory (elbow first to avoid joint2 overload `0x20`), [3] zero pose.
     `z` key → min-stress exit pose, then [1] back to session home or [2] torque off + quit (ends the launch).
   - `joint_commander.py` — terminal: `<j1°> <j2°> <j3°> <j4°> <gripper 0|1>` → `FollowJointTrajectory` on `arm_controller`.
-    Defines `JOINT_LIMITS`, `GRIPPER_OPEN_M` (0.019), `GRIPPER_CLOSE_M` (−0.010). Gripper path is broken (issue #1).
+    Defines `JOINT_LIMITS`, `GRIPPER_OPEN_M` (0.019), `GRIPPER_CLOSE_M` (−0.010). Gripper → `GripperCommand` on `/gripper_controller/gripper_cmd`
+    (issue #1 fixed 2026-11-02, not yet tested on hardware).
   - `ee_commander.py` — Cartesian goals. Closed-form 4-DOF IK (`inverse_kinematics`, `forward_kinematics`) → MoveIt `/move_action`
     (plan + execute) → gripper via `GripperCommand`. Inputs: terminal `x y z pitch° [grip]` or topic `/ee_goal`
     (`std_msgs/Float64MultiArray` `[x, y, z, pitch_rad, gripper(1 open/0 close/-1 keep)]`). Latest-goal-wins queue, no preemption.
   - `vla_bridge.py` + `vla_safety.py` — π0.5 policy server → arm, behind a safety layer (see "VLA command interface").
   - `launch/camera_front.launch.py` — RealSense D435 front camera (color only, 640×480 @ 15 Hz) → `/camera/front/color/image_raw`.
+  - `record_episodes.py` + `check_episode.py` + `episode_tools.py` — demo recorder: one rosbag2 episode (`ros2 bag record` subprocess,
+    mcap/zstd_fast) + `metadata.json` per episode in `/workspace/recordings/<task>/`, pre-flight and quick checks, s/f/d labels,
+    2-stage return to HOME. Output = input contract of `vla_layer/scripts/convert_rosbag_to_lerobot.py` (issue #13).
   - `log_joint_states.py`, `record_home_position.py`
   - `launch/open_manipulator_x_interactive.launch.py` — hardware bringup + homing node (main launch).
 

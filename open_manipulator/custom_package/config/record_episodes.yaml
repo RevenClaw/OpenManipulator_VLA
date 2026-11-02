@@ -1,0 +1,38 @@
+# record_episodes parameters. See custom_package/record_episodes.py and vla_layer/docs/PHASE4_GUIDE.md (T4.6).
+record_episodes:
+  ros__parameters:
+    task: ""                          # the prompt, e.g. "pick up the red cube and place it in the bowl". Set per session with
+                                      # -p task:="..."; it must be EXACTLY the prompt used at run time (one string per task)
+    data_dir: "/workspace/recordings" # host: open_manipulator/docker/workspace/recordings (git-ignored, survives rebuilds)
+    operator: ""
+
+    # Recorded and checked streams ("" = not recorded, e.g. no wrist camera yet)
+    state_topic: "/joint_states"
+    action_topic: "/teleop/action"    # JointState joint1..4 (rad) + "gripper" (0 open..1 closed), published by the teleop node
+    front_topic: "/camera/front/color/image_raw"
+    wrist_topic: ""                   # "/camera/wrist/image_raw" once the wrist camera exists
+    extra_topics: [""]                # recorded too, not checked, e.g. ["/leader/joint_states"]
+    min_rate_state: 50.0              # Hz
+    min_rate_action: 20.0
+    min_rate_camera: 12.0
+
+    # Checks
+    max_gap: 0.2                      # s; same limit as the converter (vla_layer/omx_pi05/dataset.py)
+    stale_after: 0.3                  # s without a message = stream down
+    min_free_gb: 5.0                  # ~0.5 GB per 20 s episode with two raw 640x480 cameras
+
+    # Recording
+    lead_in: 1.0                      # s recorded before GO; rosbag2 can miss messages right after starting
+    max_duration: 60.0                # s; stops by itself after this
+    storage: "mcap"
+    storage_preset: "zstd_fast"       # "none" if the quick check shows dropped camera frames (slow PC)
+
+    # Reset between episodes
+    require_home: true                # episodes start at HOME
+    home_tolerance: 0.05              # rad
+    home_max_speed: 0.25              # rad/s for the 2-stage move back to HOME (4–10 s)
+    auto_home: true                   # go HOME (gripper open) after every episode
+    grid_positions: 9                 # suggest object start positions 1..9 in turn (0 = off); see PHASE4_GUIDE T4.7
+    teleop_enable_service: "/teleop/enable"   # std_srvs/SetBool of the teleop node; skipped if it doesn't exist
+
+    image_reliable_qos: true          # as vla_bridge: best effort drops large camera frames

@@ -5,7 +5,7 @@ deferred. All paths are relative to `open_manipulator/`.
 
 ---
 
-## 1. `joint_commander` gripper command always fails
+## 1. `joint_commander` gripper command always fails  *(🔧 fixed 2026-11-02, not yet tested on hardware)*
 
 * **File:** `custom_package/custom_package/joint_commander.py` (`JointCommanderNode.__init__`, `move_gripper`)
 * **Problem:** The gripper client sends a `FollowJointTrajectory` goal to `/gripper_controller/follow_joint_trajectory`.
@@ -14,7 +14,13 @@ deferred. All paths are relative to `open_manipulator/`.
   `control_msgs/action/GripperCommand` action on `/gripper_controller/gripper_cmd`. The same mapping appears in `moveit_controllers.yaml`.
 * **Symptom:** Every command waits 5 s for a server that never appears, then prints "Action server not available for gripper".
   The arm still moves.
-* **Fix direction:** Use a `GripperCommand` action client on `/gripper_controller/gripper_cmd` (`command.position`, `command.max_effort`).
+* **Fix (2026-11-02):** `joint_commander` now uses a `GripperCommand` client on `/gripper_controller/gripper_cmd` (position 0.019 m open /
+  −0.010 m closed, `max_effort` 1.0, same as `ee_commander` and `vla_bridge`). It reports the final position; a `stalled` result (the
+  controller aborts the goal because `allow_stalling` is false, e.g. when the fingers stop on an object) counts as success. Also fixed:
+  quitting printed `terminate called without an active exception` and aborted (rclpy shut down under a running `rclpy.spin`; now an explicit
+  `SingleThreadedExecutor` is shut down and joined first). Tested on mock hardware: open → +0.0190 m, close → −0.0100 m, clean exit.
+  **Still to test on the real arm:** open/close, and closing on an object (expect the "stalled" message). `moveit_controllers.yaml` still
+  maps the gripper to `FollowJointTrajectory`; unchanged, since nothing here uses MoveIt for the gripper.
 
 ## 2. Minimum-stress exit pose is outside the URDF joint2 limit  *(🔧 fixed 2026-10-14, not yet tested on hardware)*
 
@@ -156,3 +162,17 @@ deferred. All paths are relative to `open_manipulator/`.
 * **Workaround:** First move off home without MoveIt, e.g. `joint_commander`: `34.9 -78 77.6 -1 1` (j3 2° less folded).
 * **Fix options (undecided):** add `<disable_collisions link1="link2" link2="link4" reason="User"/>` to both SRDFs (keeps the
   home pose; also link2↔link5 and link3↔link5 to plan from the rest pose), or unfold home by ~2° in j3 (all ~8 copies, issue #5).
+
+## 13. Episode recorder not yet used with real teleop on hardware  *(🔧 new 2026-11-02, not yet tested on hardware)*
+
+* **Files:** `custom_package/custom_package/record_episodes.py`, `check_episode.py`, `episode_tools.py`, `config/record_episodes.yaml`
+* **Tested 2026-11-02** on mock hardware with stand-in publishers for the front camera (15 Hz rgb8 640×480) and `/teleop/action` (30 Hz):
+  success / discard / failure labels, metadata.json, quick check (all streams at rate, gaps ≤ 0.08 s), "not at HOME" refusal and
+  `h` (2-stage, 4.2 s, gripper opened), pre-flight refusal with streams down, live warning + failed check when streams die mid-episode,
+  `check_episode` on a folder, and `vla_layer`'s converter accepting the recordings (`--dry-run`). 21 unit tests pass.
+* **Found and fixed while testing:** `ros2 bag record` shares the terminal and switches it to raw mode for its own pause/resume keys,
+  which swallowed the ENTER meant to stop the episode (recordings "stopped" 0.2 s after GO). Now `--disable-keyboard-controls` and
+  stdin closed.
+* **Open:** no teleop node yet (Phase 4 T4.4), so the `/teleop/enable` pause/resume hook is untested; not yet run with the real camera
+  at the same time as recording (CPU/disk load of zstd_fast on the robot PC: if the quick check shows dropped frames, set
+  `storage_preset: none`); the test used Fast DDS, check under `rmw_zenoh_cpp`.

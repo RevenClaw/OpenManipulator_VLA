@@ -237,6 +237,36 @@ Server address: the A30's IP, or `localhost` through `ssh -N -L 4000:localhost:4
 
 ---
 
+## 🎬 Step 5b: Record demonstrations (*not yet tested on hardware*, known issue #13)
+
+Records teleoperated episodes for training: one rosbag2 folder per episode plus `metadata.json`, in exactly the format the converter on
+the server reads (`vla_layer/docs/PHASE5_GUIDE.md`). Needs: the arm (Step 1), the front camera (`camera_front.launch.py`), and the teleop
+node publishing `/teleop/action` (Phase 4, not built yet).
+```bash
+ros2 run custom_package record_episodes --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/record_episodes.yaml \
+    -p task:="pick up the red cube and place it in the bowl" -p operator:=<name>
+```
+The task must be **exactly** the prompt used later at run time. Keys:
+* **ENTER**: pre-flight check (every stream alive and fast enough, task set, ≥ 5 GB free, arm at HOME) → it suggests an object
+  position (1–9 in turn) → **ENTER** starts recording → **🟢 GO** after a 1 s lead-in → do the task → **ENTER** stops →
+  quick check per topic → label: **s** success, **f** failure (kept, not trained on), **d** discard (deleted) → back to HOME, gripper open.
+* **h** go HOME (2-stage, elbow first), **c** show stream rates, **l** session summary, **q** quit.
+
+Saved to `/workspace/recordings/<task>/episode_NNNN/` = host `open_manipulator/docker/workspace/recordings/` (git-ignored, survives
+container rebuilds). About 0.5 GB per 20 s episode with two cameras. Check a session afterwards and copy it to the A30:
+```bash
+ros2 run custom_package check_episode /workspace/recordings/pick_up_the_red_cube_and_place_it_in_the_bowl
+rsync -avP open_manipulator/docker/workspace/recordings/pick_up_the_red_cube_and_place_it_in_the_bowl/ \
+    shradul@iras-hub:~/vla/openpi/omx_pie0.5/data/rosbags/pick_cube/          # on the host, from low_level_controller/
+```
+Options in `config/record_episodes.yaml`: `wrist_topic` (set once the wrist camera exists), `extra_topics`, `storage_preset`
+(`none` if the quick check shows dropped camera frames), `max_duration`, `grid_positions`, `auto_home`. If a teleop node offers
+`/teleop/enable` (SetBool), the recorder pauses it before going HOME and resumes it before the next episode; without it, pause teleop
+yourself before pressing `h`.
+
+---
+
 ## ✅ Step 6: Full Test Checklist (everything built so far)
 
 Run Part A (no robot) first; start Part B (real arm) only when Part A passes. Report results so `docs/known_issues.md` can be
@@ -277,7 +307,7 @@ ros2 launch custom_package open_manipulator_x_interactive.launch.py use_mock_har
 ros2 run custom_package joint_commander
 >> 0 0 0 0 1          # RViz arm goes to the L-shaped zero pose
 ```
-The gripper part fails after 5 s (#1); the arm still moves.
+The gripper opens (`1`) or closes (`0`) after the arm move and prints its final position; `stalled` means it stopped on an object (#1, fixed 2026-11-02).
 
 **A3. MoveIt + coordinate commander** (T2: MoveIt, T3: commander)
 ```bash

@@ -245,6 +245,15 @@ flowchart TD
   camera exists. Each observation converts the latest frame to RGB 224×224 (`resize_with_pad`) and republishes it on
   `/vla_bridge/model_input/front` (`sensor_msgs/Image`, stamped like the camera frame).
 
+### 8. `record_episodes` (Package: `custom_package`) — *not yet tested on hardware*
+* **Type**: Terminal tool that records teleoperated demonstrations (one rosbag2 episode per demo) for training the VLA policy.
+* **Subscribes** (raw, arrival times only, for freshness checks): `/joint_states`, `/teleop/action`, `/camera/front/color/image_raw`
+  (+ `/camera/wrist/image_raw` when configured). **Spawns** `ros2 bag record` per episode (mcap, zstd_fast) on those topics plus
+  `extra_topics`. **Calls** `/arm_controller/follow_joint_trajectory` (2-stage return to HOME), `/gripper_controller/gripper_cmd`
+  (open), and optionally `/teleop/enable` (std_srvs/SetBool) to pause/resume teleop.
+* **Writes** `/workspace/recordings/<task>/episode_NNNN/` (bag + `metadata.json`: task, success, duration, grid position, quick check).
+  Format contract: `vla_layer/docs/PHASE5_GUIDE.md` §2. `check_episode` re-checks recorded episodes offline.
+
 ---
 
 ## 5. The Lifecycle of a Motion Command: From Coordinate to Stator Coil

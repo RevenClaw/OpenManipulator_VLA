@@ -29,6 +29,8 @@ setup(
             'joint_commander = custom_package.joint_commander:main',
             'ee_commander = custom_package.ee_commander:main',
             'vla_bridge = custom_package.vla_bridge:main',
+            'record_episodes = custom_package.record_episodes:main',
+            'check_episode = custom_package.check_episode:main',
         ],
     },
 )

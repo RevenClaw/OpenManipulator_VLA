@@ -48,6 +48,19 @@ This document provides a complete, itemized technical record of all modification
      (wrist, for now); camera subscriptions use reliable QoS, depth 1 (`image_reliable_qos`), because best effort delivered only
      9 Hz with 0.46 s gaps from the 15 Hz D435 and tripped the 0.2 s image watchdog; the exact 224×224 images sent are republished on
      `~/model_input/<front|wrist>`; status shows `image_age_ms`; the warmup waits (with a message) until every camera has a frame.
+8. **`custom_package/joint_commander.py` gripper fix** (2026-11-02, tested on mock hardware, *not yet tested on hardware*):
+   * The gripper uses `GripperCommand` on `/gripper_controller/gripper_cmd` instead of a `FollowJointTrajectory` goal to an action that
+     doesn't exist (known issue #1). Reports the final position; a stall (e.g. on an object) counts as success.
+   * Clean exit: explicit `SingleThreadedExecutor`, shut down and joined before `rclpy.try_shutdown()` (it aborted with `terminate called`).
+9. **Episode recorder: `record_episodes.py`, `check_episode.py`, `episode_tools.py`** (2026-11-02, tested on mock hardware with stand-in
+   camera/teleop publishers, *not yet tested on hardware*; known issue #13):
+   * `record_episodes` (7th entry point): terminal tool. Pre-flight (stream freshness/rates via raw subscriptions, task, disk, arm at
+     HOME), `ros2 bag record` as a subprocess (`--disable-keyboard-controls`, stdin closed, own process group, SIGINT to stop), 1 s
+     lead-in, live stream monitor, quick check, s/f/d label, `metadata.json`, 2-stage return to HOME with the gripper open
+     (same path as `interactive_homing_node`), optional teleop pause/resume via `/teleop/enable`. `config/record_episodes.yaml`.
+   * `check_episode` (8th entry point): per-topic count/rate/largest gap of recorded episodes from receive times (`rosbag2_py`).
+   * `episode_tools.py`: the pure parts (naming, HOME path, analysis, metadata), unit-tested in `test/test_episode_tools.py`.
+   * `package.xml`: exec-depends on `ros2bag`, `rosbag2_py`, `rosbag2_storage_mcap` (all in the Docker image).
 
 ---
 

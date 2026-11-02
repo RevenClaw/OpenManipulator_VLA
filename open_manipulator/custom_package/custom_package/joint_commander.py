@@ -3,7 +3,9 @@
 # joint_commander.py
 #
 # Interactive terminal script to send joint angle commands to the
-# OpenManipulator-X arm and gripper directly via ros2_control action servers.
+# OpenManipulator-X arm and gripper directly via ros2_control action servers:
+#   arm     -> FollowJointTrajectory on /arm_controller/follow_joint_trajectory
+#   gripper -> GripperCommand on /gripper_controller/gripper_cmd (GripperActionController, action only)
 #
 # Usage:
 #   ros2 run custom_package joint_commander
@@ -21,8 +23,10 @@ import threading
 import time
 
 from control_msgs.action import FollowJointTrajectory
+from control_msgs.action import GripperCommand
 import rclpy
 from rclpy.action import ActionClient
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
@@ -41,6 +45,8 @@ GRIPPER_OPEN_M  =  0.019   # m  (upper limit of gripper_left_joint = 0.020)
 GRIPPER_CLOSE_M = -0.010   # m  (matches initial_value in ros2_control.xacro)
 
 MOVE_DURATION_SEC = 4.0    # seconds for joint trajectory execution
+GRIPPER_MAX_EFFORT = 1.0   # same as ee_commander / vla_bridge
+GRIPPER_TIMEOUT_SEC = 10.0
 
 
 # ---------------------------------------------------------------------------
@@ -55,9 +61,10 @@ class JointCommanderNode(Node):
             self, FollowJointTrajectory,
             '/arm_controller/follow_joint_trajectory'
         )
+        # gripper_controller is a GripperActionController: it serves only GripperCommand (known issue #1).
         self.gripper_client = ActionClient(
-            self, FollowJointTrajectory,
-            '/gripper_controller/follow_joint_trajectory'
+            self, GripperCommand,
+            '/gripper_controller/gripper_cmd'
         )
 
         self.get_logger().info('Joint Commander Node initialized.')
@@ -116,12 +123,46 @@ class JointCommanderNode(Node):
 
     # ------------------------------------------------------------------
     def move_gripper(self, open_flag: bool) -> bool:
-        pos = GRIPPER_OPEN_M if open_flag else GRIPPER_CLOSE_M
-        return self._send_trajectory(
-            self.gripper_client,
-            ['gripper_left_joint'], [pos],
-            1.5, label='gripper'
-        )
+        if not self.gripper_client.wait_for_server(timeout_sec=5.0):
+            print('  ❌  /gripper_controller/gripper_cmd not available.')
+            return False
+
+        goal = GripperCommand.Goal()
+        goal.command.position = GRIPPER_OPEN_M if open_flag else GRIPPER_CLOSE_M
+        goal.command.max_effort = GRIPPER_MAX_EFFORT
+
+        future = self.gripper_client.send_goal_async(goal)
+        start = time.time()
+        while not future.done():
+            if time.time() - start > 5.0:
+                print('  ❌  Timeout sending gripper goal.')
+                return False
+            time.sleep(0.05)
+
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            print('  ❌  gripper goal rejected by controller.')
+            return False
+
+        result_future = goal_handle.get_result_async()
+        start = time.time()
+        while not result_future.done():
+            if time.time() - start > GRIPPER_TIMEOUT_SEC:
+                print('  ❌  Timeout waiting for gripper result.')
+                return False
+            time.sleep(0.05)
+
+        result = result_future.result().result
+        if result.reached_goal:
+            print(f'  {"🖐️  Gripper open" if open_flag else "✊  Gripper closed"} ({result.position:+.4f} m).')
+            return True
+        if result.stalled:
+            # Stopped before the target, e.g. on an object. The controller aborts the goal (allow_stalling: false),
+            # but for a grasp this is the expected outcome.
+            print(f'  ✊  Gripper stopped at {result.position:+.4f} m (stalled, e.g. holding an object).')
+            return True
+        print(f'  ❌  Gripper did not reach the target (at {result.position:+.4f} m).')
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +243,9 @@ def main(args=None):
     rclpy.init(args=args)
     node = JointCommanderNode()
 
-    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
 
     print_header()
@@ -255,8 +298,12 @@ def main(args=None):
                 print('  ⚠️   Movement completed with errors (see above).')
 
     finally:
+        # Stop the executor and join its thread before shutting rclpy down; shutting down under a running
+        # rclpy.spin() aborted the process on exit ("terminate called without an active exception").
+        executor.shutdown()
+        spin_thread.join(timeout=2.0)
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
         sys.exit(0)
 
 

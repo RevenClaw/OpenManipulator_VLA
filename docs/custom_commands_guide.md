@@ -58,7 +58,8 @@ rviz2
 ros2 run custom_package joint_commander
 >> 0 0 0 0 1          # <j1°> <j2°> <j3°> <j4°> <gripper 0|1>    (q = quit)
 ```
-The gripper part fails after 5 s (known issue #1); the arm still moves.
+After the arm move the gripper opens (`1`) or closes (`0`) and prints its final position; "stalled" means it stopped on an object
+(known issue #1, fixed 2026-11-02).
 
 ## 6. Keyboard teleop
 
