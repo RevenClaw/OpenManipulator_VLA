@@ -48,6 +48,12 @@ works as with the real arm.
 ### Homing Options on Startup:
 * **Option 1 (Custom Manual Home)**: Motor torque is disabled immediately so you can move the arm freely by hand to your desired initial pose. Press **ENTER** in the terminal to lock torque cleanly without any movement or jerk.
 * **Option 2 (MoveIt Default Home `[0.6090, -1.3622, 1.3898, -0.0154]`)**: Torque locks and smoothly moves the arm over 5 seconds to the recommended home position.
+* **Option 3 (Zero Pose `[0, 0, 0, 0]`)**: Same 2-stage move, to the L-shaped zero pose. It becomes the session home, so `z` → `1` returns there.
+
+> [!NOTE]
+> **If MoveIt flags the home pose as colliding** (`START_STATE_IN_COLLISION`, `link2 - link4`, known issue #12), use
+> **option 3 (zero pose)** instead of option 2. The zero pose is collision-free in MoveIt, so RViz planning and `ee_commander`
+> work right away. The zero pose holds the arm extended, so don't leave it there for long stretches.
 
 > [!IMPORTANT]
 > **Best Practice & Safe Exit Routine (`z` key)**:
@@ -93,6 +99,9 @@ ros2 launch open_manipulator_moveit_config open_manipulator_x_moveit.launch.py
 3. In the left **MotionPlanning** panel:
    * Click **Plan** to compute an obstacle-free trajectory.
    * Click **Execute** to send trajectory goals to the physical robot arm!
+
+If **Plan** fails with `START_STATE_IN_COLLISION` (`link2 - link4`) while the arm is at home, that is known issue #12:
+restart the hardware launch and pick **option 3 (zero pose)** in the homing menu, or move off home with `joint_commander`.
 
 ---
 
@@ -316,8 +325,8 @@ ros2 run custom_package ee_commander --ros-args -p velocity_scaling:=0.1 -p min_
 >> p                  # prints the current pose
 >> 0.20 0 0.15 0 1    # 20 cm forward, 15 cm up, gripper level, then open
 ```
-From home, MoveIt refuses with `START_STATE_IN_COLLISION` (#12). Move off home first with `joint_commander`, e.g.
-`34.9 -78 77.6 -1 1` (home with j3 2° less folded) or `0 0 0 0 1`.
+From home, MoveIt refuses with `START_STATE_IN_COLLISION` (#12). Use the zero pose instead: pick option **3** in the homing
+menu, or move there with `joint_commander` `0 0 0 0 1` (or `34.9 -78 77.6 -1 1`, home with j3 2° less folded).
 
 **A4. Front camera on its own**
 ```bash

@@ -36,7 +36,8 @@ ros2 launch custom_package open_manipulator_x_interactive.launch.py port_name:=/
 # No robot connected (mock hardware): the arm exists only in RViz
 ros2 launch custom_package open_manipulator_x_interactive.launch.py use_mock_hardware:=true
 ```
-Menu: **2** = default home (use this), 3 = zero pose, 1 = move by hand. `z` = exit pose, then `1` back home or `2` torque off + quit.
+Menu: **2** = default home, **3** = zero pose, 1 = move by hand. `z` = exit pose, then `1` back to the chosen home or `2` torque off + quit.
+If MoveIt flags the home pose as colliding (`START_STATE_IN_COLLISION`, `link2 - link4`, known issue #12), pick **3** (zero pose) instead.
 With mock hardware, "torque service not available" warnings are expected.
 
 ## 4. RViz

@@ -21,7 +21,8 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
 - `open_manipulator/` — ROBOTIS packages (description, bringup, moveit_config, teleop, gui, …) with local config edits.
 - `open_manipulator/custom_package/` — **all our own code** (ament_python):
   - `interactive_homing_node.py` — startup menu: [1] hand-pose (deactivates `arm_controller`, torque off, ENTER → torque on + reactivate),
-    [2] default home via 2-stage trajectory (elbow first to avoid joint2 overload `0x20`), [3] zero pose.
+    [2] default home via 2-stage trajectory (elbow first to avoid joint2 overload `0x20`), [3] zero pose
+    (use [3] when MoveIt flags home as `START_STATE_IN_COLLISION`, issue #12).
     `z` key → min-stress exit pose, then [1] back to session home or [2] torque off + quit (ends the launch).
   - `joint_commander.py` — terminal: `<j1°> <j2°> <j3°> <j4°> <gripper 0|1>` → `FollowJointTrajectory` on `arm_controller`.
     Defines `JOINT_LIMITS`, `GRIPPER_OPEN_M` (0.019), `GRIPPER_CLOSE_M` (−0.010). Gripper → `GripperCommand` on `/gripper_controller/gripper_cmd`

@@ -159,7 +159,14 @@ deferred. All paths are relative to `open_manipulator/`.
   link5↔link2 0.7 mm, link5↔link3 0.8 mm. Home with j3 2° less folded, and the zero pose, are collision-free.
 * **Symptom:** `ee_commander` (and MoveIt in RViz) fails with `START_STATE_IN_COLLISION (-10)` when the arm starts at home.
   `joint_commander`, the homing node and `vla_bridge` are unaffected (no MoveIt).
-* **Workaround:** First move off home without MoveIt, e.g. `joint_commander`: `34.9 -78 77.6 -1 1` (j3 2° less folded).
+* **Workaround (use this):** start the session at the **zero pose**: homing menu option **3** (it becomes the session home, so
+  `z` → `1` returns there). Or move off home without MoveIt, e.g. `joint_commander`: `0 0 0 0 1` or `34.9 -78 77.6 -1 1`
+  (j3 2° less folded).
+* **Cause (2026-11-02):** the collision meshes are bulkier than the real parts here, not a calculation error (meshes are the CAD
+  STLs at exact scale, no MoveIt padding). At j2 = −79°, j4 = 0 the model's link2↔link4 contact starts at j3 = 79.75° (top of
+  `link2.stl` 23.3 mm above the joint2 axis against the joint4-servo end of `link4.stl`); on the real arm the forearm only
+  touches the shoulder past j3 = 90° (user test). Still to rule out: a joint3 zero error (command `34.9 -79 79 0 1`, forearm
+  should be level).
 * **Fix options (undecided):** add `<disable_collisions link1="link2" link2="link4" reason="User"/>` to both SRDFs (keeps the
   home pose; also link2↔link5 and link3↔link5 to plan from the rest pose), or unfold home by ~2° in j3 (all ~8 copies, issue #5).
 
