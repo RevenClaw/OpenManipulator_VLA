@@ -1,0 +1,52 @@
+# scripted_demo parameters. See custom_package/scripted_demo.py and docs/finetuning_procedure.md.
+scripted_demo:
+  ros__parameters:
+    # Dataset
+    dataset: "scripted_pick_place"    # -> /workspace/recordings/scripted_pick_place/episode_NNNN
+    data_dir: "/workspace/recordings"
+    prompt_template: "pick up the {color} cube and place it in the {target}"   # {target} = the tag name in object_detector
+    colors: ["red", "green", "blue"]  # YOLO classes to pick
+    color_targets: [""]               # e.g. ["red:red bin", "blue:blue bin"]; empty = a random visible target
+    episodes: 0                       # stop after this many saved episodes (0 = until q)
+    record: true                      # false = trial mode: run the episodes on the arm without recording
+    seed: -1                          # -1 = random; set a number to make a session reproducible
+
+    # Recorded streams (same as record_episodes)
+    state_topic: "/joint_states"
+    action_topic: "/teleop/action"    # published by this node: the commanded target, 30 Hz
+    action_rate: 30.0
+    front_topic: "/camera/front/color/image_raw"
+    wrist_topic: ""                   # "/camera/wrist/image_raw" once the wrist camera exists
+    extra_topics: [""]
+    min_rate_state: 50.0
+    min_rate_action: 20.0
+    min_rate_camera: 12.0
+    stale_after: 0.3
+    max_gap: 0.2
+    lead_in: 1.0
+    tail: 0.5
+    storage: "mcap"
+    storage_preset: "zstd_fast"
+    min_free_gb: 5.0
+
+    # Scene and motion (measure these on your setup)
+    table_z: 0.0                      # m, table surface in the world frame (0 if the base stands on the table)
+    cube_size: 0.025                  # m
+    bin_height: 0.04                  # m, rim height of the target above the table
+    release_clearance: 0.03           # m above the rim when opening
+    target_xy_offset: [0.0, 0.0]      # m from the target's AprilTag to the drop point (0 if the tag is at the bin centre)
+    max_joint_vel: [0.5, 0.3, 0.6, 0.8]   # rad/s per joint (j2 = shoulder, overloads: keep low). The policy learns these
+                                      # speeds: set vla_bridge's max_joint_vel_per_joint to the same values for policy runs
+    max_pitch_deg: 90.0               # gripper tilt, 90 = pointing down; the steepest reachable one is used
+    min_pitch_deg: 30.0
+    workspace_x: [0.08, 0.32]         # m; cubes outside are ignored
+    workspace_y: [-0.25, 0.25]
+    variation: true                   # small random variations per episode (DATASET_PLAN.md §4.4)
+    correction_prob: 0.1              # share of episodes that approach slightly off and then correct
+
+    # Success checks
+    check_grasp: true                 # false on mock hardware (its gripper always closes fully)
+    grasp_closed_threshold: -0.007    # m; gripper at or below this after closing = nothing held
+    check_place: true
+    target_radius: 0.06               # m around the drop point that counts as "in the target"
+    gripper_max_effort: 1.0

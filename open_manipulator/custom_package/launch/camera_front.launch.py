@@ -3,9 +3,12 @@
 # Front (main) camera for vla_bridge: Intel RealSense D435, color only.
 #   ros2 launch custom_package camera_front.launch.py
 #   ros2 launch custom_package camera_front.launch.py serial_no:=_927522071177 color_profile:=640,480,30
+#   ros2 launch custom_package camera_front.launch.py depth:=true     # + depth aligned to color, for object_detector
 # Publishes /camera/front/color/image_raw (rgb8, 640x480 @ 15 Hz = the policy's control rate). vla_bridge resizes each frame
 # to 224x224 (resize_with_pad) when it builds an observation. Depth, infrared, IMU and pointcloud are off: the policy uses
 # only RGB, and 640x480 color at 15 Hz also fits a USB 2 link.
+# depth:=true adds depth aligned to the color image (/camera/front/aligned_depth_to_color/image_raw, 16UC1 mm) for
+# object_detector (scripted demos, calibration). Use a USB 3 port for color + depth.
 #
 
 import os
@@ -24,6 +27,8 @@ def generate_launch_description():
         DeclareLaunchArgument('serial_no', default_value="''",
                               description='RealSense serial (prefix with _, e.g. _927522071177); empty = first device'),
         DeclareLaunchArgument('color_profile', default_value='640,480,15', description='width,height,fps of the color stream'),
+        DeclareLaunchArgument('depth', default_value='false', description='true: depth aligned to color (object_detector)'),
+        DeclareLaunchArgument('depth_profile', default_value='640,480,15', description='width,height,fps of the depth stream'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(rs_launch),
             launch_arguments={
@@ -32,13 +37,14 @@ def generate_launch_description():
                 'serial_no': LaunchConfiguration('serial_no'),
                 'enable_color': 'true',
                 'rgb_camera.color_profile': LaunchConfiguration('color_profile'),
-                'enable_depth': 'false',
+                'enable_depth': LaunchConfiguration('depth'),
+                'depth_module.depth_profile': LaunchConfiguration('depth_profile'),
                 'enable_infra1': 'false',
                 'enable_infra2': 'false',
                 'enable_gyro': 'false',
                 'enable_accel': 'false',
                 'pointcloud.enable': 'false',
-                'align_depth.enable': 'false',
+                'align_depth.enable': LaunchConfiguration('depth'),
             }.items(),
         ),
     ])

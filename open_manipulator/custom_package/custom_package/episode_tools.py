@@ -19,6 +19,10 @@ import numpy as np
 
 RECORDER_VERSION = 1
 HOME = [0.6090, -1.3622, 1.3898, -0.0154]  # configured_home_position.yaml (known issue #5: keep all copies in sync)
+# Start and end pose of every demonstration (scripted and teleop) and of every policy run: gripper 70° down, 12 cm above the
+# table at (0.16, 0, 0.12) m, i.e. IK(0.16, 0.0, 0.12, 70°). HOME is a folded storage pose (gripper horizontal) far from the
+# workspace; starting episodes there doubled their length. In degrees for joint_commander: 0.0 -14.6 -8.7 93.3.
+READY = [0.0, -0.2547, -0.1520, 1.6284]
 
 # Minimum healthy rates for the standard streams (the camera and teleop rates are 15 Hz and ~30 Hz).
 DEFAULT_MIN_RATES = {

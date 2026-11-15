@@ -1,0 +1,15 @@
+# object_detector parameters. See custom_package/object_detector.py and docs/finetuning_procedure.md.
+object_detector:
+  ros__parameters:
+    color_topic: "/camera/front/color/image_raw"
+    depth_topic: "/camera/front/aligned_depth_to_color/image_raw"   # camera_front.launch.py depth:=true
+    info_topic: "/camera/front/color/camera_info"
+    calibration_file: "/workspace/calibration/camera_calibration.yaml"   # written by calibrate_camera
+    model_path: "/workspace/models/yolo_cubes.pt"                       # copy of yolo_pipeline/YOLO_MODEL/YOLO.pt (red/green/blue)
+    confidence: 0.5
+    image_size: 640
+    device: "cpu"                     # "0" for the first GPU if the robot PC has one
+    target_tags: ["20:bin"]           # "<AprilTag 36h11 id>:<name in the prompt>", e.g. ["20:black bin", "24:white bin"]
+    object_size: 0.025                # m, cube edge (the visible surface point is moved back by half of it)
+    rate_hz: 3.0
+    max_frame_skew: 0.1               # s between the color and depth frames used together

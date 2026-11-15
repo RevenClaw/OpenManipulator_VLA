@@ -110,3 +110,9 @@ def test_ros_image_conversion():
     np.testing.assert_array_equal(S.ros_image_to_rgb('bgr8', h, w, w * 3, bgr.tobytes()), rgb)
     with pytest.raises(ValueError):
         S.ros_image_to_rgb('mono8', h, w, w, bytes(h * w))
+
+
+def test_rate_limit_per_joint_caps():
+    caps = np.array([0.5, 0.3, 0.6, 0.8])
+    out = S.rate_limit(np.zeros(4), np.array([[1.0, 1.0, 1.0, 1.0]]), caps, [1.0])
+    np.testing.assert_allclose(out[0], caps)  # each joint moved at most its own cap in 1 s

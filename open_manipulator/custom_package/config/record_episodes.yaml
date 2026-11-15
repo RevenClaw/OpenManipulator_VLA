@@ -28,10 +28,11 @@ record_episodes:
     storage_preset: "zstd_fast"       # "none" if the quick check shows dropped camera frames (slow PC)
 
     # Reset between episodes
-    require_home: true                # episodes start at HOME
+    start_pose: "ready"               # "ready" (gripper 70° down above the workspace; same as scripted_demo and policy runs) or "home"
+    require_home: true                # episodes start at the start pose
     home_tolerance: 0.05              # rad
-    home_max_speed: 0.25              # rad/s for the 2-stage move back to HOME (4–10 s)
-    auto_home: true                   # go HOME (gripper open) after every episode
+    home_max_speed: 0.25              # rad/s for the 2-stage move back to the start pose (4–10 s)
+    auto_home: true                   # back to the start pose (gripper open) after every episode
     grid_positions: 9                 # suggest object start positions 1..9 in turn (0 = off); see PHASE4_GUIDE T4.7
     teleop_enable_service: "/teleop/enable"   # std_srvs/SetBool of the teleop node; skipped if it doesn't exist
 

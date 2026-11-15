@@ -87,6 +87,7 @@ class VLABridgeNode(Node):
         self.declare_parameter('prompt', '')
         self.declare_parameter('fps', 15.0)                    # must match the training data
         self.declare_parameter('max_joint_vel', 0.3)           # rad/s, speed cap per joint (joint2 overload, 0x20)
+        self.declare_parameter('max_joint_vel_per_joint', [0.0])  # [j1, j2, j3, j4] rad/s; overrides max_joint_vel if set
         self.declare_parameter('limit_margin', 0.05)           # rad kept clear of JOINT_LIMITS
         self.declare_parameter('max_start_jump', 0.15)         # rad, chunk rejected if it starts farther away
         self.declare_parameter('min_z', 0.02)                  # m, fingertip height floor (forward kinematics)
@@ -107,7 +108,10 @@ class VLABridgeNode(Node):
         self.port = int(p('server_port').value)
         self.prompt = p('prompt').value
         self.fps = float(p('fps').value)
-        self.max_vel = float(p('max_joint_vel').value)
+        per_joint = [float(v) for v in p('max_joint_vel_per_joint').value]
+        # Per-joint caps (e.g. the scripted demos' [0.5, 0.3, 0.6, 0.8]): the policy moves at the speeds it was trained on,
+        # and the shoulder (joint2) keeps a low cap. rate_limit applies a scalar or a per-joint array the same way.
+        self.max_vel = np.array(per_joint) if len(per_joint) == 4 and min(per_joint) > 0 else float(p('max_joint_vel').value)
         self.margin = float(p('limit_margin').value)
         self.max_start_jump = float(p('max_start_jump').value)
         self.min_z = float(p('min_z').value)
@@ -177,8 +181,11 @@ class VLABridgeNode(Node):
         mode = 'SHADOW (arm will not move)' if self.shadow else 'LIVE'
         self.get_logger().info(
             f'vla_bridge {mode}: server ws://{self.host}:{self.port}, {self.fps:.0f} Hz, '
-            f'max {self.max_vel:.2f} rad/s, cameras: {self.camera_summary()}. Starts DISABLED.'
+            f'max {self.speed_cap_text()} rad/s, cameras: {self.camera_summary()}. Starts DISABLED.'
         )
+
+    def speed_cap_text(self):
+        return f'{self.max_vel:.2f}' if np.isscalar(self.max_vel) else '[' + ', '.join(f'{v:.2f}' for v in self.max_vel) + ']'
 
     def camera_summary(self):
         return ', '.join(f'{n}={self.cameras.get(n, "black frames")}' for n in ('front', 'wrist'))
@@ -485,7 +492,7 @@ def print_header(node):
     print('  🦾  OpenManipulator-X  |  VLA Bridge')
     print('=' * 66)
     print(f'  Server: ws://{node.host}:{node.port}   Mode: {"SHADOW (arm will not move)" if node.shadow else "LIVE"}')
-    print(f'  Speed cap {node.max_vel:.2f} rad/s, {node.fps:.0f} Hz, prompt: "{node.prompt}"')
+    print(f'  Speed cap {node.speed_cap_text()} rad/s, {node.fps:.0f} Hz, prompt: "{node.prompt}"')
     print(f'  Cameras: {node.camera_summary()}')
     print('  e = enable,  d = disable (hold),  s = status,  q = quit')
     print('  Also: /vla_bridge/enable (SetBool), /vla_bridge/estop (Bool), /vla_bridge/status')

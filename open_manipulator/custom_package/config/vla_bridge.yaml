@@ -8,6 +8,8 @@ vla_bridge:
 
     # Safety layer
     max_joint_vel: 0.3                # rad/s per joint. Start slow (joint2 overload 0x20); raise only after live tests
+    max_joint_vel_per_joint: [0.0]    # [j1, j2, j3, j4] rad/s, overrides max_joint_vel. For a policy trained on scripted_demo
+                                      # data use its caps, e.g. [0.5, 0.3, 0.6, 0.8], so the learned motion isn't clipped
     limit_margin: 0.05                # rad kept clear of the URDF joint limits
     max_start_jump: 0.15              # rad; a chunk starting farther from the arm is rejected
     min_z: 0.02                       # m; fingertip height floor (forward kinematics)

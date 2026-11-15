@@ -31,6 +31,9 @@ setup(
             'vla_bridge = custom_package.vla_bridge:main',
             'record_episodes = custom_package.record_episodes:main',
             'check_episode = custom_package.check_episode:main',
+            'object_detector = custom_package.object_detector:main',
+            'calibrate_camera = custom_package.calibrate_camera:main',
+            'scripted_demo = custom_package.scripted_demo:main',
         ],
     },
 )

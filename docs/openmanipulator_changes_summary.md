@@ -61,6 +61,21 @@ This document provides a complete, itemized technical record of all modification
    * `check_episode` (8th entry point): per-topic count/rate/largest gap of recorded episodes from receive times (`rosbag2_py`).
    * `episode_tools.py`: the pure parts (naming, HOME path, analysis, metadata), unit-tested in `test/test_episode_tools.py`.
    * `package.xml`: exec-depends on `ros2bag`, `rosbag2_py`, `rosbag2_storage_mcap` (all in the Docker image).
+10. **Scripted demonstrations for fine-tuning** (2026-11-05, tested in simulation, *not yet tested on hardware*; known issue #14;
+    procedure `docs/finetuning_procedure.md`):
+   * New nodes `object_detector`, `calibrate_camera`, `scripted_demo` (entry points 9–11) and pure modules `perception_tools.py`
+     (Kabsch, projection, robust depth, AprilTags for OpenCV 4.6 and ≥ 4.7) and `demo_planning.py` (waypoints, pitch choice, IK,
+     minimum-jerk segments with per-joint caps, Cartesian descents, random variation, success check), unit-tested in
+     `test/test_perception_tools.py` and `test/test_demo_planning.py`. Configs `object_detector.yaml`, `scripted_demo.yaml`.
+     Ideas from the `yolo_pipeline` project (Kabsch calibration, YOLO wrapper, AprilTag bins), reimplemented for ROS topics, metres
+     and the 4-DOF arm.
+   * `recording.py`: `StreamMonitor` and `BagRecorder` moved out of `record_episodes.py` (shared with `scripted_demo`).
+   * **READY start pose** (`episode_tools.READY`) for every demo and policy run; `record_episodes` uses it by default
+     (`start_pose`). Starting episodes from the folded HOME doubled their length (~65 s → ~27 s median).
+   * `vla_bridge`: optional `max_joint_vel_per_joint` (per-joint speed caps; default unchanged: 0.3 for all joints).
+   * `camera_front.launch.py`: `depth:=true` adds depth aligned to color (`depth_profile`).
+   * `docker/install_vla_deps.sh` (openpi-client + CPU PyTorch + ultralytics 8.3.40 + OpenCV 4.10, numpy < 2) and the same pins in
+     the Dockerfile. `package.xml`: `python3-yaml`, `python3-opencv`.
 
 ---
 

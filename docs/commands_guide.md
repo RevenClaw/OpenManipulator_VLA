@@ -160,10 +160,14 @@ ros2 run custom_package log_joint_states --ros-args -p log_rate_hz:=10.0
 Streams action chunks from the π0.5 policy server (`vla_layer`) to the arm behind a safety layer. Design and test ladder:
 `vla_layer/docs/PHASE3_GUIDE.md`. **Starts disabled.** Keep a hand on the hardware e-stop when live.
 
-**Once per container:** `openpi-client` is in the Dockerfile; in an older container install it by hand:
+**After every `./container.sh start`** (it pulls the prebuilt image, not our Dockerfile, and `stop` removes the container):
+install the Python extras, `openpi-client` for the bridge plus YOLO for the scripted demos (pinned, skips what is there):
 ```bash
-pip install --break-system-packages typing_extensions "openpi-client @ git+https://github.com/Physical-Intelligence/openpi.git@215abfb#subdirectory=packages/openpi-client"
+bash /root/ros2_ws/src/open_manipulator/docker/install_vla_deps.sh
 ```
+Speed caps: `max_joint_vel` (one value for all joints, default 0.3 rad/s) or `max_joint_vel_per_joint` `[j1, j2, j3, j4]`. For
+a policy trained on `scripted_demo` data use the demos' caps (`-p "max_joint_vel_per_joint:=[0.5, 0.3, 0.6, 0.8]"`), so the
+learned motion isn't clipped, and start with the arm at READY (`joint_commander`: `0 -14.6 -8.7 93.3 1`).
 
 After `git pull`, rebuild so new launch files (e.g. `camera_front.launch.py`) are installed:
 ```bash
@@ -257,10 +261,12 @@ ros2 run custom_package record_episodes --ros-args --params-file \
     -p task:="pick up the red cube and place it in the bowl" -p operator:=<name>
 ```
 The task must be **exactly** the prompt used later at run time. Keys:
-* **ENTER**: pre-flight check (every stream alive and fast enough, task set, ≥ 5 GB free, arm at HOME) → it suggests an object
+* **ENTER**: pre-flight check (every stream alive and fast enough, task set, ≥ 5 GB free, arm at **READY**) → it suggests an object
   position (1–9 in turn) → **ENTER** starts recording → **🟢 GO** after a 1 s lead-in → do the task → **ENTER** stops →
-  quick check per topic → label: **s** success, **f** failure (kept, not trained on), **d** discard (deleted) → back to HOME, gripper open.
-* **h** go HOME (2-stage, elbow first), **c** show stream rates, **l** session summary, **q** quit.
+  quick check per topic → label: **s** success, **f** failure (kept, not trained on), **d** discard (deleted) → back to READY, gripper open.
+* **h** go to READY (2-stage, elbow first), **c** show stream rates, **l** session summary, **q** quit.
+* **READY** (`episode_tools.READY`, gripper 70° down 12 cm above the workspace centre) is the start pose of every demo, scripted
+  or teleop, and of every policy run. `start_pose: home` in the config uses the folded HOME instead.
 
 Saved to `/workspace/recordings/<task>/episode_NNNN/` = host `open_manipulator/docker/workspace/recordings/` (git-ignored, survives
 container rebuilds). About 0.5 GB per 20 s episode with two cameras. Check a session afterwards and copy it to the A30:
@@ -273,6 +279,23 @@ Options in `config/record_episodes.yaml`: `wrist_topic` (set once the wrist came
 (`none` if the quick check shows dropped camera frames), `max_duration`, `grid_positions`, `auto_home`. If a teleop node offers
 `/teleop/enable` (SetBool), the recorder pauses it before going HOME and resumes it before the next episode; without it, pause teleop
 yourself before pressing `h`.
+
+---
+
+## 🤖 Step 5c: Scripted demonstrations for fine-tuning (YOLO + IK, *not yet tested on hardware*, known issue #14)
+
+Automatic pick-and-place demos recorded in the same format: camera with depth, `object_detector` (YOLO cubes + AprilTag bins),
+`calibrate_camera` (once), then `scripted_demo`. **The full step-by-step procedure (setup, calibration, trials, pilot, bulk
+recording, conversion, training, running the policy) is in `docs/finetuning_procedure.md`.** Short form:
+```bash
+ros2 launch custom_package camera_front.launch.py depth:=true
+ros2 run custom_package object_detector --ros-args --params-file $(ros2 pkg prefix custom_package)/share/custom_package/config/object_detector.yaml
+ros2 run custom_package calibrate_camera                                   # once (and whenever the camera moves)
+ros2 run custom_package scripted_demo --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml -p record:=false -p episodes:=3   # trials
+ros2 run custom_package scripted_demo --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml -p episodes:=10                 # record
+```
 
 ---
 
@@ -292,7 +315,7 @@ source /root/ros2_ws/install/setup.bash
 cd /root/ros2_ws && colcon build --symlink-install --packages-select custom_package open_manipulator_moveit_config open_manipulator_description open_manipulator_bringup
 source install/setup.bash
 ```
-**Once per container:** `openpi-client` (see Step 5).
+**After every container start:** `install_vla_deps.sh` (see Step 5).
 
 ### Part A — no robot connected (mock robot)
 

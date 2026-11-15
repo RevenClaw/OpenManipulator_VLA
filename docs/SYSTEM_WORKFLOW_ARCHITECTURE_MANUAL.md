@@ -249,10 +249,34 @@ flowchart TD
 * **Type**: Terminal tool that records teleoperated demonstrations (one rosbag2 episode per demo) for training the VLA policy.
 * **Subscribes** (raw, arrival times only, for freshness checks): `/joint_states`, `/teleop/action`, `/camera/front/color/image_raw`
   (+ `/camera/wrist/image_raw` when configured). **Spawns** `ros2 bag record` per episode (mcap, zstd_fast) on those topics plus
-  `extra_topics`. **Calls** `/arm_controller/follow_joint_trajectory` (2-stage return to HOME), `/gripper_controller/gripper_cmd`
+  `extra_topics`. **Calls** `/arm_controller/follow_joint_trajectory` (2-stage return to READY), `/gripper_controller/gripper_cmd`
   (open), and optionally `/teleop/enable` (std_srvs/SetBool) to pause/resume teleop.
 * **Writes** `/workspace/recordings/<task>/episode_NNNN/` (bag + `metadata.json`: task, success, duration, grid position, quick check).
   Format contract: `vla_layer/docs/PHASE5_GUIDE.md` §2. `check_episode` re-checks recorded episodes offline.
+
+### 9. `object_detector` (Package: `custom_package`) — *not yet tested on hardware*
+* **Type**: Perception node for the scripted demonstrations (3 Hz).
+* **Subscribes**: `/camera/front/color/image_raw` (rgb8), `/camera/front/aligned_depth_to_color/image_raw` (16UC1, from
+  `camera_front.launch.py depth:=true`), `/camera/front/color/camera_info`. Reliable QoS (large frames).
+* **Does**: YOLO (ultralytics, `/workspace/models/yolo_cubes.pt`, classes red/green/blue) for cubes, OpenCV AprilTag 36h11 for targets;
+  depth = median of the box's inner half; pixel + depth → camera point → world via `/workspace/calibration/camera_calibration.yaml`
+  (reloaded when it changes); cube centres = visible point moved back by half a cube along the viewing direction.
+* **Publishes**: `~/detections` (`std_msgs/String` JSON: objects, targets, tags, intrinsics; world xyz in m, null without calibration),
+  `~/annotated` (`sensor_msgs/Image`), `~/markers` (`visualization_msgs/MarkerArray`, frame `world`).
+
+### 10. `calibrate_camera` (Package: `custom_package`) — *not yet tested on hardware*
+* **Type**: Terminal tool. Camera tag positions from `/object_detector/detections` (arm out of view), then the fingertip on each tag
+  (forward kinematics of `/joint_states`) → Kabsch fit → `/workspace/calibration/camera_calibration.yaml` with per-tag residuals.
+
+### 11. `scripted_demo` (Package: `custom_package`) — *not yet tested on hardware*
+* **Type**: Automatic demonstration recorder (pick-and-place, v1 fine-tuning data). Procedure: `docs/finetuning_procedure.md`.
+* **Subscribes**: `/object_detector/detections`, `/joint_states`, plus the recorded streams (raw, freshness only).
+* **Publishes**: `/teleop/action` (`sensor_msgs/JointState`: joint1..4 + `gripper` 0..1, 30 Hz: the commanded target = the action
+  the policy learns), `/arm_controller/joint_trajectory` (hold on abort only).
+* **Calls**: `/arm_controller/follow_joint_trajectory` (one dense minimum-jerk trajectory per motion group, per-joint speed caps),
+  `/gripper_controller/gripper_cmd`. **Spawns** `ros2 bag record` per episode (shared `recording.BagRecorder`).
+* **Writes** `/workspace/recordings/scripted_pick_place/episode_NNNN/` (bag + `metadata.json` with `source: scripted`, task,
+  positions, waypoints, random variation, checks). Episodes with recording problems are deleted.
 
 ---
 

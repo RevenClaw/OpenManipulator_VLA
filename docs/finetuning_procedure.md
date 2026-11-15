@@ -1,0 +1,223 @@
+# Fine-tuning Procedure (v1): scripted YOLO pick-and-place demonstrations → π0.5
+
+The exact steps, in order, from an empty table to a fine-tuned π0.5 running on the OM-X. Why this approach and what v1 can and
+can't do: `vla_layer/docs/FINETUNING_STAGES.md`, `vla_layer/docs/DATASET_PLAN.md`. Known issue #14 tracks its test status.
+
+**Status (2026-11-05):** all software below is tested in simulation (mock arm, fake camera streams, the real YOLO model on a
+stock photo, the real converter), **nothing yet on the real arm or with the real camera**. Expect to tune the values marked
+🔧 during sections 4–6.
+
+```
+ ┌── robot PC (Docker container) ───────────────────────────────────────────────────────────────┐
+ │ camera_front (color + aligned depth) ─► object_detector (YOLO cubes + AprilTag bins, metres)  │
+ │                                              │                                                │
+ │ scripted_demo: task → plan (IK, smooth, random variation) → arm + gripper → checks → label     │
+ │   publishes the commanded targets on /teleop/action, records with ros2 bag record             │
+ │   → /workspace/recordings/scripted_pick_place/episode_NNNN/ (bag + metadata.json)             │
+ └───────────────────────────────────────────────────────────────────────────────────────────────┘
+          │ rsync
+ ┌── A30 server (vla_layer) ──── convert_rosbag_to_lerobot → norm stats → LoRA training → serve ─┐
+          │ websocket
+ robot PC: vla_bridge (the trained policy drives the arm, starting at READY)
+```
+
+---
+
+## 0. What you need
+- The OM-X on the robot PC, the RealSense D435 on a **USB 3** port, the container built from the current Dockerfile.
+- Cubes the YOLO model knows: **red, green, blue**, about 2.5 cm (measure yours). **No other coloured objects** on the table:
+  the model only knows these three classes and forces anything else into one of them (a yellow cube was detected as "green"
+  in testing).
+- One target: a **flat tray or shallow bin** that the arm can reach, with an **AprilTag 36h11** (e.g. ID 20) flat at its centre.
+- 4–6 more AprilTags (IDs 16–19, …) for calibration, flat on the table, spread over the workspace. Printable tags:
+  `yolo_pipeline/data/tags/`. Print them about 4–5 cm wide.
+
+---
+
+## 1. One-time setup
+
+### 1.1 Software (robot PC)
+```bash
+cd low_level_controller && git pull                       # branch side
+cd open_manipulator/docker && ./container.sh start && ./container.sh enter
+bash /root/ros2_ws/src/open_manipulator/docker/install_vla_deps.sh   # openpi-client + CPU PyTorch + YOLO; ends with ✅ numpy 1.26.x, cv2 4.10.0
+```
+`./container.sh start` pulls the prebuilt ROBOTIS image (it does **not** build our Dockerfile) and `./container.sh stop`
+removes the container, so **run `install_vla_deps.sh` after every start** (it skips what is already there). The PyTorch
+download (~175 MB) can time out on a slow link: the script's header explains how to pass pre-downloaded wheel files.
+Build, and put the YOLO model where `object_detector` looks for it (`/workspace` = host `open_manipulator/docker/workspace`):
+```bash
+cd /root/ros2_ws && colcon build --symlink-install --packages-select custom_package && source install/setup.bash
+mkdir -p /workspace/models /workspace/calibration /workspace/recordings
+cp <path to>/yolo_pipeline/YOLO_MODEL/YOLO.pt /workspace/models/yolo_cubes.pt   # copy it on the host into docker/workspace/models/
+```
+
+### 1.2 The scene (fix it once, never move it afterwards)
+1. **Camera:** mounted rigidly, looking at the whole workspace and the gripper from the front/above. Mark its position.
+   The policy learns the scene from exactly this viewpoint, for recording **and** for running the model later.
+2. **Lighting:** fixed (curtains closed or always on). Later: lock exposure/white balance (`PHASE4_GUIDE.md` T4.2).
+3. **Target:** tray/bin with its tag at the centre, inside the reach (≈ 0.10–0.28 m from the base, see §3.3).
+4. **Calibration tags:** 4–6 tags flat on the table, spread around the workspace (corners plus middle), all visible.
+   They can stay (and the bin tag can be one of them). The policy sees them too, so keep them for every session.
+
+---
+
+## 2. Start everything (every session)
+
+Six container terminals (`./container.sh enter`, then `source /root/ros2_ws/install/setup.bash` in each):
+```bash
+# T0 Zenoh router (not auto-started)
+zenohd
+# T1 arm: homing menu option 2 (HOME)
+ls -l /dev/serial/by-id/                                     # which ttyUSBx is the U2D2
+ros2 launch custom_package open_manipulator_x_interactive.launch.py port_name:=/dev/ttyUSB0
+# T2 camera with depth aligned to color
+ros2 launch custom_package camera_front.launch.py depth:=true
+# T3 detector
+ros2 run custom_package object_detector --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/object_detector.yaml
+# T4 RViz: Add → By topic → /object_detector/annotated → Image; /object_detector/markers → MarkerArray (fixed frame: world)
+rviz2
+# T5 the tools of the following sections (calibrate_camera, scripted_demo, check_episode)
+```
+Check the rates before going on: `ros2 topic hz /camera/front/color/metadata` (~15 Hz) and
+`ros2 topic hz /object_detector/detections` (~3 Hz).
+
+---
+
+## 3. Check YOLO and the targets on your scene (5 min)
+1. Put one cube of each colour on the table. In RViz's `/object_detector/annotated` image every cube must have a box with the
+   right colour name and confidence ≥ 0.5, and the bin tag must be marked with its name (`bin` by default).
+2. Move each cube to several places (near, far, left, right of the workspace): it must stay detected.
+3. If cubes are missed or mislabelled: better light, fewer reflections, or lower `confidence` (0.4). If it stays poor, the
+   model has to be fine-tuned on images of your table (not covered by v1: capture ~200 frames, label them, fine-tune YOLO.pt
+   with ultralytics).
+4. Names: set `target_tags` in `config/object_detector.yaml` to the words used in the prompt, e.g. `["20:black bin"]`.
+
+---
+
+## 4. Calibrate camera → robot (once, and again whenever the camera moves)
+```bash
+ros2 run custom_package calibrate_camera
+```
+1. Arm at HOME (out of the view), all tags visible → **ENTER**: the camera measures every tag (2 s).
+2. For each tag: put the **fingertip centre** (gripper closed) **on the tag centre**, then **ENTER**. Easiest: homing menu
+   option 1 in T1 (torque off, move the arm by hand); press ENTER in T1 afterwards to lock the torque again.
+3. Read the fit: **aim for mean < 5 mm, max < 10 mm**. Above 15 mm the tool warns; re-touch the worst tags (or skip one with
+   `s`) and run again. Answer `y` to save → `/workspace/calibration/camera_calibration.yaml`; `object_detector` reloads it.
+4. 🔧 **table_z:** the recorded tag heights (`world (x, y, z)` lines) are the table height in the robot frame. Put their
+   average into `table_z` in `config/scripted_demo.yaml` (0.0 if the base stands on the table).
+5. **Verify:** place a cube; its RViz marker must sit on the cube, and the `(x, y)` in the annotated image must match a ruler
+   measurement from the base within ~1 cm.
+
+(In simulation with known tag positions the tool recovered the camera pose to 0.00° and 0.7 mm.)
+
+---
+
+## 5. Measure the scene values 🔧 (`config/scripted_demo.yaml`, `config/object_detector.yaml`)
+| Value | How |
+|---|---|
+| `cube_size` (and `object_size` in the detector) | ruler, metres (0.025 = 2.5 cm) |
+| `bin_height` | rim height of the tray/bin above the table |
+| `target_xy_offset` | `[0, 0]` if the tag is at the bin centre; otherwise the offset from the tag to the drop point |
+| `workspace_x`, `workspace_y` | the area where you put cubes; cubes outside are ignored |
+| `colors`, `prompt_template`, `color_targets` | which cubes to pick and how prompts read; `color_targets: ["red:red bin"]` fixes a bin per colour |
+
+---
+
+## 6. Trial runs on the real arm (no recording)
+Hand near the power switch. The first runs at reduced speed:
+```bash
+ros2 run custom_package scripted_demo --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml \
+    -p record:=false -p episodes:=3 -p "max_joint_vel:=[0.3, 0.2, 0.4, 0.5]"
+```
+Watch every motion: the arm goes READY → above the cube → down → close → up → over the bin → down → open → up → READY.
+For each trial it prints the gripper position after closing and both checks:
+```
+🧪  trial (not recorded): gripper after closing 0.0042 m -> holding (threshold -0.007); place: ok (cube no longer visible ...)
+```
+- 🔧 **grasp_closed_threshold:** close the gripper once on nothing and once on a cube (`joint_commander`), note both
+  `gripper_left_joint` values, and set the threshold between them.
+- If the gripper misses the cube consistently in one direction, the calibration is off (redo §4) or `cube_size`/`table_z` is.
+- If it misses in depth only, check `object_size` (the visible face is moved back by half a cube).
+- If joint2 errors (`0x20`) appear, keep the lower speeds and report it.
+- Then run 10 trials at the default speed (`-p episodes:=10`); go on when **≥ 8/10 succeed**.
+
+---
+
+## 7. Pilot: 5–10 recorded episodes
+```bash
+ros2 run custom_package scripted_demo --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml -p episodes:=10
+```
+- Each episode: task line (🎯), quick check per topic, then `💾 saved: ✅ SUCCESS` or `❌ FAILURE (kept, not trained on)`.
+  Episodes with recording problems (gaps, stopped streams) are **deleted automatically** and the loop moves on.
+- When no reachable cube is left (all in the bin), it pauses: **put the cubes back at new places, ENTER** to continue.
+- Keys: `p` pause after this episode, `ENTER` continue, `q` quit after this episode, **Ctrl+C** abort now (the arm holds,
+  the current episode is deleted).
+- If dropped camera frames show up often, set `storage_preset: "none"` (no compression).
+
+Check and copy to the A30, then convert (full commands: `vla_layer/docs/PHASE5_GUIDE.md`):
+```bash
+ros2 run custom_package check_episode /workspace/recordings/scripted_pick_place
+# on the host, from low_level_controller/
+rsync -avP open_manipulator/docker/workspace/recordings/scripted_pick_place/ \
+    shradul@iras-hub:~/vla/openpi/omx_pie0.5/data/rosbags/scripted_pick_place/
+# on the A30 (source scripts/env.sh)
+python scripts/convert_rosbag_to_lerobot.py data/rosbags/scripted_pick_place --dry-run --no-wrist
+```
+Every episode should be converted, with ~15 Hz front, ~30 Hz action, ~100 Hz state. Two warnings are expected in v1:
+several task strings (several colours), and black wrist frames (no wrist camera yet).
+
+---
+
+## 8. Bulk recording: ~200–300 episodes
+- Same command as §7 with `-p episodes:=0` (until `q`); several sessions are fine (numbering continues).
+- Spread the cubes over the whole workspace each time you reset; vary which colours are left.
+- Same camera, light, tags and bin in every session. Episodes take ~20–35 s; plan ~3 h of robot time for 300.
+- Disk: ~0.4 GB per episode → ~120 GB for 300. Convert and archive in batches if the robot PC's disk is small
+  (`min_free_gb` stops recording at 5 GB free).
+- Every episode's `metadata.json` records the prompt, the cube and target positions, the waypoints, the random variation
+  and the checks (`source: scripted`).
+
+---
+
+## 9. Convert, train, serve (A30)
+```bash
+python scripts/convert_rosbag_to_lerobot.py data/rosbags/scripted_pick_place --repo-id local/omx_scripted_v1 --no-wrist
+#   note the dataset hash it prints in docs/experiments.md
+# omx_pi05/train_configs.py, DATASETS:  "scripted_v1": "local/omx_scripted_v1",
+python scripts/compute_norm_stats.py pi05_omx_lora_scripted_v1
+bash scripts/gpu_check.sh train && python scripts/train.py pi05_omx_lora_scripted_v1 --exp-name=scripted_v1   # in tmux, ~32 h
+```
+There is no wrist camera: the wrist view is masked out by default (`wrist_camera=False` in `omx_pi05`), so the model ignores it
+in training and serving. First run `python -m pytest -q tests/test_policy.py` on the A30 (the masking was written on the laptop,
+where openpi isn't installed, so these tests have not run yet).
+Evaluate the 5k/10k/15k checkpoints early (`IMPLEMENTATION_PLAN.md` T6.3).
+
+## 10. Run the policy on the arm
+1. Serve the checkpoint on the A30 (`scripts/serve.py`, port 4000).
+2. Move the arm to **READY**, the pose every demo started from: `ros2 run custom_package joint_commander` → `0 -14.6 -8.7 93.3 1`.
+3. Start the bridge with the **demos' per-joint speed caps**, so the learned motion isn't clipped, and the exact prompt:
+   ```bash
+   ros2 run custom_package vla_bridge --ros-args --params-file \
+       $(ros2 pkg prefix custom_package)/share/custom_package/config/vla_bridge.yaml -p server_host:=<server-ip> \
+       -p "max_joint_vel_per_joint:=[0.5, 0.3, 0.6, 0.8]" -p prompt:="pick up the red cube and place it in the bin"
+   ```
+4. Shadow mode first (`-p shadow:=true`), then live. 20 trials per prompt, results in `vla_layer/docs/experiments.md`.
+
+---
+
+## Troubleshooting
+| Symptom | Likely cause / fix |
+|---|---|
+| `no fresh detections (is object_detector running?)` | T3 not running, or the camera was started without `depth:=true` |
+| detector: `depth and color sizes differ` | camera without `depth:=true` (no aligned depth) |
+| `no target (AprilTag) visible` | tag covered, too small, or not in `target_tags` |
+| `no reachable cube` | cubes outside `workspace_x/y` or out of reach; it pauses: move them closer, ENTER |
+| grasps miss by a constant offset | calibration (§4), `table_z`, `cube_size`/`object_size` |
+| every trial says "nothing held" | `grasp_closed_threshold` too high (§6) |
+| place check fails although the cube is in the bin | `target_radius` too small, or `target_xy_offset` wrong |
+| `/joint_states: 0.5 s gap` → episode deleted | load spike on the PC; if frequent: `storage_preset: "none"`, close other programs |
+| joint2 overload (`0x20`) | lower `max_joint_vel` (shoulder value first); report it |

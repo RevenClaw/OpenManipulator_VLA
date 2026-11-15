@@ -183,3 +183,22 @@ deferred. All paths are relative to `open_manipulator/`.
 * **Open:** no teleop node yet (Phase 4 T4.4), so the `/teleop/enable` pause/resume hook is untested; not yet run with the real camera
   at the same time as recording (CPU/disk load of zstd_fast on the robot PC: if the quick check shows dropped frames, set
   `storage_preset: none`); the test used Fast DDS, check under `rmw_zenoh_cpp`.
+
+## 14. Scripted demonstrations (YOLO + IK) not yet run on the real arm  *(🔧 new 2026-11-05, not yet tested on hardware)*
+
+* **Files:** `custom_package/custom_package/{object_detector,calibrate_camera,scripted_demo,perception_tools,demo_planning,recording}.py`,
+  `config/{object_detector,scripted_demo}.yaml`, `docker/install_vla_deps.sh`. Procedure: `docs/finetuning_procedure.md`.
+* **Tested 2026-11-05 in simulation:** 40 unit tests; a sweep of 1500 random cube positions (1339 planned, 51 out of reach, speeds
+  never above the per-joint caps, fingertips never below 8.5 mm, episodes 21–37 s); `object_detector` with the real YOLO.pt on a
+  fake RealSense stream (red/green/blue found at 0.97–1.00, depth and world coordinates correct, tag found); `calibrate_camera` with
+  known tag positions (camera pose recovered to 0.00° / 0.7 mm); `scripted_demo` on the mock arm (episodes recorded, the commanded
+  action under the caps and tracked to 0.005 rad, gripper events at the right times, an episode with a 0.5 s `/joint_states` gap
+  deleted automatically); `vla_layer`'s converter accepting the episodes; trial mode; `record_episodes` after the refactor.
+* **Found and fixed while testing:** AprilTag detection segfaulted with OpenCV 4.6 (`DetectorParameters()` instead of
+  `DetectorParameters_create()`); the optional correction/via waypoints could make an otherwise reachable cube fail (now dropped
+  when unreachable); without keyboard input the loop quit at once; episodes from HOME took ~65 s (READY start + per-joint caps).
+* **Open / to tune on hardware:** the YOLO model on our table and light (it forces unknown objects into red/green/blue: a yellow
+  cube was detected as green), calibration accuracy with real depth, `table_z`, `cube_size`, `bin_height`,
+  `grasp_closed_threshold`, the real arm's tracking lag, joint2 load at the demo speeds, CPU load of YOLO + recording on the robot
+  PC, and Zenoh instead of Fast DDS. No wrist camera: `vla_layer` masks the wrist view by default since 2026-11-13
+  (`wrist_camera=False`); the bridge still sends a black wrist frame, which is ignored.

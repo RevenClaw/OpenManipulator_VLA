@@ -56,6 +56,16 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --break-system-packages typing_extensions \
     "openpi-client @ git+https://github.com/Physical-Intelligence/openpi.git@215abfb217dbac7d5f1273282331b9b1866c0479#subdirectory=packages/openpi-client"
 
+# YOLO for custom_package/object_detector (scripted demonstrations). CPU PyTorch from PyTorch's own index (PyPI's default is
+# the multi-GB CUDA build). numpy stays < 2 (openpi-client needs it) and opencv-python is pinned to 4.10, the last release
+# that supports numpy 1.x; it also brings the newer cv2.aruco API. tqdm is installed by Debian and can't be upgraded in place.
+# Tested together 2026-11-05: numpy 1.26.4, cv2 4.10.0, torch 2.5.1+cpu, ultralytics 8.3.40.
+RUN pip install --break-system-packages --timeout 120 --retries 10 \
+        --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 torchvision==0.20.1 "numpy<2" && \
+    pip install --break-system-packages --ignore-installed tqdm && \
+    pip install --break-system-packages --timeout 120 --retries 10 \
+        "numpy<2" "opencv-python==4.10.0.84" "ultralytics==8.3.40"
+
 ENV COLCON_WS=/root/ros2_ws
 WORKDIR ${COLCON_WS}
 
