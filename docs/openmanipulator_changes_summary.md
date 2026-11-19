@@ -76,6 +76,8 @@ This document provides a complete, itemized technical record of all modification
    * `camera_front.launch.py`: `depth:=true` adds depth aligned to color (`depth_profile`).
    * Pipeline test (2026-11-19): `config/pick_place_test.yaml` + `launch/pick_place_test.launch.py`; `scripted_demo` got `confirm`,
      `remember_targets` and `place_offsets` (+ `demo_planning.place_offset`), so objects can be placed ON a tag.
+   * `scripted_demo until_clear` (on in the test config): counts the objects, retries failed picks (cap `max_attempts_per_object` per
+     object and objects × that in total), stops by itself; `run_plan`/`back_out` abort a failed grasp (lift, open, READY).
    * `docker/install_vla_deps.sh` (openpi-client + CPU PyTorch + ultralytics 8.3.40 + OpenCV 4.10, numpy < 2) and the same pins in
      the Dockerfile. `package.xml`: `python3-yaml`, `python3-opencv`.
 

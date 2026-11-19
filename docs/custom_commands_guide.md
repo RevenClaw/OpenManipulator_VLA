@@ -124,14 +124,19 @@ ros2 run custom_package calibrate_camera
 ros2 run custom_package scripted_demo --ros-args --params-file \
     $(ros2 pkg prefix custom_package)/share/custom_package/config/pick_place_test.yaml
 ```
+**How it ends:** it counts the objects at the first look (`🧮 N object(s) to place`) and keeps going until every one is on the
+marker, then stops by itself (`🏁 N object(s) on the marker`). **Failed picks are retried:** if nothing is in the gripper after
+closing, the arm lifts, opens and returns to start (`✋ … backing out`); if the object is not on the marker afterwards, it is simply
+picked again on the next round. Per object it gives up after 3 failed attempts, and the whole run stops after objects × 3 attempts
+(`max_attempts_per_object`), so a bad object cannot loop forever. Progress line after each attempt: `📈 1 of 2 placed, 2 attempt(s), 1 failed`.
 
 Useful variations (add to the `scripted_demo` command):
 ```bash
 -p confirm:=false                          # run without asking for each plan (after the first successful runs)
--p episodes:=5                             # stop after 5 pick-and-places
+-p max_attempts_per_object:=5              # more (or fewer) retries per object before giving up on it
 -p "max_joint_vel:=[0.5, 0.3, 0.6, 0.8]"   # faster (j1..j4 rad/s; default in the test config: [0.3, 0.2, 0.4, 0.5])
 -p table_z:=0.012 -p cube_size:=0.03       # scene values: table height in the robot frame, object edge (m)
--p grasp_closed_threshold:=-0.005          # gripper position (m) at or below which "nothing is held"
+-p grasp_closed_threshold:=0.014           # gripper position (m) at or above which "nothing is held" (closed end = 0.019)
 -p "colors:=['red']"                       # pick only red objects
 -p seed:=1                                 # same choices every run
 ```
@@ -147,6 +152,9 @@ Only after the pipeline test (§10) passes. Procedure: `docs/finetuning_procedur
 # Pilot: 10 recorded episodes with the template prompt "pick up the {color} cube and place it in the {target}" (bin tag name from object_detector.yaml)
 ros2 run custom_package scripted_demo --ros-args --params-file \
     $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml -p episodes:=10
+
+# Exactly one successful episode per object, failed picks retried (also records the failed attempts, labelled failure):
+# add  -p until_clear:=true  to the command above (it stops by itself when all objects are on the target)
 
 # Bulk: until you press q (the current episode finishes first)
 ros2 run custom_package scripted_demo --ros-args --params-file \

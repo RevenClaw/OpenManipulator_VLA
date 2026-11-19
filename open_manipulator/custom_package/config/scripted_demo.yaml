@@ -9,6 +9,8 @@ scripted_demo:
     color_targets: [""]               # e.g. ["red:red bin", "blue:blue bin"]; empty = a random visible target
     episodes: 0                       # stop after this many saved episodes (0 = until q)
     record: true                      # false = trial mode: run the episodes on the arm without recording
+    until_clear: false                # true: count the objects and keep going (retrying failures) until all are at the target
+    max_attempts_per_object: 3        # until_clear: give up on an object after this many failed picks
     seed: -1                          # -1 = random; set a number to make a session reproducible
 
     # Recorded streams (same as record_episodes)
@@ -46,7 +48,7 @@ scripted_demo:
 
     # Success checks
     check_grasp: true                 # false on mock hardware (its gripper always closes fully)
-    grasp_closed_threshold: -0.007    # m; gripper at or below this after closing = nothing held
+    grasp_closed_threshold: 0.016    # m; gripper at or below this after closing = nothing held
     check_place: true
     target_radius: 0.06               # m around the drop point that counts as "in the target"
     gripper_max_effort: 1.0

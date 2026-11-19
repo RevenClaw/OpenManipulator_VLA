@@ -9,7 +9,12 @@ scripted_demo:
   ros__parameters:
     record: false                     # trial mode: run the motions and the checks, record nothing
     confirm: true                     # print every plan first: ENTER = execute, s = skip (nothing moves), q = quit
-    episodes: 0                       # 0 = keep going until q
+    # Clear the table: count the objects at the first look and keep going until every one is on the marker. A failed pick
+    # (nothing grasped, or the object not on the marker afterwards) is simply retried on the next round, up to
+    # max_attempts_per_object per object, and objects x max_attempts in total, so a bad object can't loop forever.
+    until_clear: true
+    max_attempts_per_object: 3
+    episodes: 0                       # 0 = no extra limit
 
     # What to pick and where to put it
     colors: ["red", "green", "blue"]  # every class the YOLO model knows; objects are picked in random order
@@ -40,6 +45,6 @@ scripted_demo:
     # Checks. The grasp check needs grasp_closed_threshold (measure: close the gripper on nothing and on an object, read
     # gripper_left_joint, put the threshold between the two). Mock hardware always closes fully: set check_grasp false there.
     check_grasp: true
-    grasp_closed_threshold: -0.007
+    grasp_closed_threshold: 0.016
     check_place: true
     gripper_max_effort: 1.0

@@ -207,3 +207,29 @@ deferred. All paths are relative to `open_manipulator/`.
   `s` / `q`), `remember_targets` (the placed object covers the tag; its last seen position is kept) and `place_offsets` (the next
   object lands 5 cm from the previous one). Tested in simulation: the target stayed known after its tag disappeared, offsets
   cycled (x 0.14 → 0.19 → 0.09), skipping a plan moved nothing. Not yet run on the real arm.
+* **Clear-the-table mode added 2026-11-19** (`until_clear`, `max_attempts_per_object`; on in `pick_place_test.yaml`): counts the
+  objects, runs until all are on the target, retries failures, stops by itself; after a failed grasp the arm backs out (lift, open,
+  READY) instead of carrying nothing. Tested in simulation with a scripted world: fail → retry → 2 of 2 placed in 3 attempts, and
+  an always-failing grasp stopped at objects × 2 attempts. Not yet run on the real arm.
+
+## 15. Gripper open/close inverted on the real arm  *(🔧 fixed 2026-11-19, not yet tested on hardware)*
+
+* **Symptom:** commands that should open the gripper closed it and vice versa (seen with the scripted pick-and-place test).
+* **Cause:** this unit's gripper is physically inverted w.r.t. ROBOTIS's stock convention (+0.019 m open). Every tool followed the stock
+  convention, so every tool was inverted together. (The gripper servo ID 15 runs with `Drive Mode 5`, reversed, plus its own offset and
+  unit conversion; the other servos use `4`.)
+* **Fix:** `GRIPPER_OPEN_M = −0.010`, `GRIPPER_CLOSE_M = +0.019` in `joint_commander.py` (also used by `ee_commander`, `scripted_demo`,
+  `record_episodes`), `vla_safety.py` (the bridge) and `vla_layer/omx_pi05/constants.py`. The model's convention is unchanged (0 = open,
+  1 = closed): the same formula now maps −0.010 → 0 and 0.019 → 1. `scripted_demo`'s "is something in the gripper" check is
+  polarity-aware (`demo_planning.gripper_holding`) and `grasp_closed_threshold` defaults to 0.016 (was −0.007, its mirror image).
+* **Check on the arm:** `joint_commander` → `0 -14.6 -8.7 93.3 1` must OPEN the gripper, `… 0` must CLOSE it. If it is still inverted
+  there, swap the two values back in all copies (tests/test_constants_match_robot.py compares `joint_commander` with `vla_layer`).
+* **Side effects:** RViz draws the gripper model the other way round (it follows the URDF's +0.019 = open). ROBOTIS's own keyboard
+  teleop (`open_manipulator_x_teleop`, keys `o`/`p`) is upstream code and now runs inverted on this arm. Any data recorded or checkpoint
+  trained before 2026-11-19 used the old polarity (none of real data existed yet; the synthetic debug checkpoint is unaffected).
+
+* **Gripper stops above the table (2026-11-19, #14 follow-up):** the grasp height is `table_z + cube_size/2` from the config; the camera and its
+  calibration only supply x and y. The robot's z = 0 is the origin of `link1`, not necessarily the table: the base plate mesh spans
+  −8 mm..0 and the model's shoulder is 59.5 mm up where ROBOTIS lists 77 mm, so the real table is probably 8–17 mm below z = 0, and
+  `table_z: 0.0` puts the grasp that much too high. Measure `table_z` (fingertip on the table, see `finetuning_procedure.md` D2).
+  `scripted_demo` now prints the measured fingertip height against the plan before each close (`📏 …`) and `table_z` in its banner.

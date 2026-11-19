@@ -64,6 +64,10 @@ class Aborted(Exception):
     pass
 
 
+class Finished(Exception):
+    """Nothing is left to pick (all objects at the target, or the rest is unreachable / given up on)."""
+
+
 class ScriptedDemo(Node):
 
     def __init__(self):
@@ -108,13 +112,15 @@ class ScriptedDemo(Node):
         dp('place_offsets', [0.0, 0.0])                         # [dx0, dy0, dx1, dy1, ...] extra drop offsets, one per placement, cycling
         dp('remember_targets', True)                            # a tag covered by a placed object keeps its last seen position
         dp('confirm', False)                                    # print each plan and wait: ENTER = execute, s = skip, q = quit
+        dp('until_clear', False)                                # count the objects, keep going until all are at the target
+        dp('max_attempts_per_object', 3)                        # until_clear: give up on an object after this many failed picks
         dp('workspace_x', [0.08, 0.32])                         # m, cubes outside are ignored
         dp('workspace_y', [-0.25, 0.25])
         dp('variation', True)
         dp('correction_prob', 0.1)
         # checks
         dp('check_grasp', True)                                 # False on mock hardware (the gripper always closes fully)
-        dp('grasp_closed_threshold', -0.007)                    # m; at or below = closed on nothing
+        dp('grasp_closed_threshold', 0.016)                     # m; between the fully closed end (0.019) and the holding position
         dp('check_place', True)
         dp('target_radius', 0.06)
         dp('gripper_max_effort', 1.0)
@@ -128,7 +134,12 @@ class ScriptedDemo(Node):
         self.color_targets = dict(s.split(':', 1) for s in p('color_targets') if ':' in s)
         self.target_offset = np.array(p('target_xy_offset'), float)
         self.known_targets = {}       # tag id -> last detected target (a placed object can cover its tag)
-        self.attempts = 0             # episodes actually executed (selects the next place_offsets entry)
+        self.attempts = 0             # episodes actually executed
+        self.placed = 0               # objects successfully placed (selects the next place_offsets entry)
+        self.until_clear = bool(p('until_clear'))
+        self.max_attempts = int(p('max_attempts_per_object'))
+        self.initial_count = None     # until_clear: objects to place, counted at the first look
+        self.fail_log = []            # (label, x, y) of every failed pick, to give up on an object after max_attempts
         self.answers = queue.Queue()  # keyboard lines, while a plan waits for confirmation
         self.awaiting = False
         self.cfg = D.PlanConfig(table_z=p('table_z'), cube_size=p('cube_size'), bin_height=p('bin_height'),
@@ -325,26 +336,109 @@ class ScriptedDemo(Node):
             raise Aborted('no target (AprilTag) visible')
         cubes = [o for o in det['objects'] if o['label'] in self.colors and o.get('xyz')
                  and lo_x <= o['xyz'][0] <= hi_x and lo_y <= o['xyz'][1] <= hi_y]
-        reasons = []
-        for i in self.rng.permutation(len(cubes)):
-            cube = cubes[i]
+        if not cubes:
+            if self.until_clear and self.attempts:
+                raise Finished('no objects left in the workspace')
+            raise Aborted('no reachable cube among 0 detected')
+        items, at_target, given_up = [], 0, 0
+        for cube in cubes:
             if cube['label'] in self.color_targets:
                 options = [t for t in targets if t['name'] == self.color_targets[cube['label']]]
             else:
                 options = list(targets)
             options = [t for t in options if np.linalg.norm(np.array(cube['xyz'][:2]) - t['xyz'][:2]) > self.p('target_radius')]
             if not options:
-                continue
+                at_target += 1  # already on its target
+            elif self.until_clear and self.failures(cube) >= self.max_attempts:
+                given_up += 1
+            else:
+                items.append((cube, options))
+        if self.until_clear and self.initial_count is None:
+            self.initial_count = len(items)
+            print(f'  🧮  {len(items)} object(s) to place; failed picks are retried (up to {self.max_attempts} attempts per object).')
+        if not items:
+            raise Finished(f'{at_target} object(s) on the marker' + (f', {given_up} given up after {self.max_attempts} failed attempts' if given_up else ''))
+        reasons = []
+        for i in self.rng.permutation(len(items)):
+            cube, options = items[i]
             target = options[int(self.rng.integers(len(options)))]
             var = D.sample_variation(self.rng, bool(self.p('variation')), float(self.p('correction_prob')))
-            target_xy = np.array(target['xyz'][:2]) + self.target_offset + D.place_offset(self.p('place_offsets'), self.attempts)
+            target_xy = np.array(target['xyz'][:2]) + self.target_offset + D.place_offset(self.p('place_offsets'), self.placed)
             try:
                 plan = D.plan_pick_place(cube['xyz'][:2], target_xy, self.cfg, var)
             except D.PlanningError as e:
                 reasons.append(f'{cube["label"]}: {e}')
                 continue
             return cube, target, target_xy, plan, var, D.make_prompt(self.template, cube['label'], target['name'])
-        raise Aborted('no reachable cube' + (f' ({"; ".join(reasons)})' if reasons else f' among {len(cubes)} detected'))
+        message = f'no reachable cube ({"; ".join(reasons)})'
+        if self.until_clear:
+            raise Finished(f'{len(items)} object(s) left but none reachable: {"; ".join(reasons)}')
+        raise Aborted(message)
+
+    def failures(self, cube):
+        """Failed picks so far of this object (same colour, within 5 cm of where it lies now)."""
+        return sum(1 for label, x, y in self.fail_log
+                   if label == cube['label'] and np.hypot(x - cube['xyz'][0], y - cube['xyz'][1]) < 0.05)
+
+    def note_outcome(self, cube, success):
+        """Bookkeeping after an executed episode: successes move the next drop point on, failures count against the object."""
+        if success:
+            self.placed += 1
+        else:
+            self.fail_log.append((cube['label'], float(cube['xyz'][0]), float(cube['xyz'][1])))
+        if self.until_clear and self.initial_count:
+            print(f'  📈  {self.placed} of {self.initial_count} placed, {self.attempts} attempt(s), {len(self.fail_log)} failed'
+                  + ('' if success else ' (will retry)'))
+
+    # ------------------------------------------------------------------ executing a plan
+    def run_plan(self, plan, watch=False):
+        """Executes the plan. Returns (gripper position after closing in m, backed_out). If the grasp check finds nothing in
+        the gripper after closing, the arm lifts, opens and returns to the start pose instead of carrying nothing to the
+        target (backed_out True)."""
+        grasp_m = None
+        for group in D.plan_groups(plan):
+            if group['kind'] == 'move':
+                self.execute(group['times'], group['joints'])
+            else:
+                if group['name'] == 'close':
+                    self.report_reach(plan)
+                measured = self.gripper(group['gripper'], group['duration'])
+                if group['name'] == 'close':
+                    grasp_m = measured
+                    if self.p('check_grasp') and not self.holding(measured):
+                        print(f'  ✋  nothing in the gripper after closing ({measured} m): backing out')
+                        self.back_out(plan)
+                        return grasp_m, True
+            if watch:
+                for topic in self.monitor.stale(self.p('stale_after')):
+                    print(f'  ⚠️  {topic} stopped during the episode.')
+        return grasp_m, False
+
+    def report_reach(self, plan):
+        """Diagnostic, printed just before the gripper closes: where the fingertip really is (forward kinematics of the measured
+        joints) against the planned grasp point. z far above plan = the arm has not arrived (lag, load); z on plan but the fingers
+        hover above the table = table_z or the fingertip model is off."""
+        q = self.current_joints()
+        if q is None:
+            return
+        x, y, z, _ = D.forward_kinematics(q)
+        w = plan.waypoints['grasp']
+        print(f'  📏  before closing: fingertip z {z * 1000:.1f} mm (planned {w[2] * 1000:.1f}, table_z {self.cfg.table_z * 1000:.1f}), '
+              f'xy error {np.hypot(x - w[0], y - w[1]) * 1000:.1f} mm, z error {(z - w[2]) * 1000:+.1f} mm')
+
+    def holding(self, measured_m):
+        """Something is between the fingers: the gripper stopped before its fully closed end (either joint polarity)."""
+        return D.gripper_holding(measured_m, self.p('grasp_closed_threshold'), GRIPPER_OPEN_M, GRIPPER_CLOSE_M)
+
+    def back_out(self, plan):
+        """After a failed grasp: straight up, open the gripper, back to the start pose."""
+        q = self.current_joints()
+        lift = D.solve(plan.waypoints['lift'], near=q) if q is not None else None
+        if lift is not None:
+            times, joints = D.joint_segment(q, lift, self.cfg.max_joint_vel, self.cfg)
+            self.execute(times, joints)
+        self.gripper(0.0, 0.4)
+        self.move_to(plan.start)
 
     def confirmed(self, plan):
         """Prints the plan's waypoints and waits for the operator: ENTER = execute, s = skip (nothing moves), q = quit."""
@@ -416,15 +510,7 @@ class ScriptedDemo(Node):
         try:
             time.sleep(self.p('lead_in'))
             t_go = time.monotonic()
-            for group in D.plan_groups(plan):
-                if group['kind'] == 'move':
-                    self.execute(group['times'], group['joints'])
-                else:
-                    measured = self.gripper(group['gripper'], group['duration'])
-                    if group['name'] == 'close':
-                        grasp_m = measured
-                for topic in self.monitor.stale(self.p('stale_after')):
-                    print(f'  ⚠️  {topic} stopped during the episode.')
+            grasp_m, _ = self.run_plan(plan, watch=True)
             time.sleep(self.p('tail'))
         except Aborted as e:
             error = str(e)
@@ -447,7 +533,7 @@ class ScriptedDemo(Node):
 
         checks = {}
         if self.p('check_grasp'):
-            held = grasp_m is not None and grasp_m > self.p('grasp_closed_threshold')
+            held = self.holding(grasp_m)
             checks['grasp'] = {'ok': bool(held), 'gripper_m': grasp_m}
         if self.p('check_place'):
             after = self.fresh_detections(newer_than=time.monotonic() + 0.3, timeout=4.0)
@@ -458,6 +544,7 @@ class ScriptedDemo(Node):
                                             [o for o in after['objects'] if o.get('xyz')], self.p('target_radius'))
                 checks['place'] = {'ok': ok, 'reason': reason}
         success = all(c['ok'] for c in checks.values())
+        self.note_outcome(cube, success)
 
         meta = E.build_metadata(
             task=prompt, success=success, index=index, start_time=start_wall, duration_s=duration, topics=self.topics,
@@ -480,15 +567,8 @@ class ScriptedDemo(Node):
 
     def trial(self, plan, cube, target_xy):
         """The same motion and checks without recording (first runs on the real arm, tuning grasp_closed_threshold)."""
-        grasp_m = None
-        for group in D.plan_groups(plan):
-            if group['kind'] == 'move':
-                self.execute(group['times'], group['joints'])
-            else:
-                measured = self.gripper(group['gripper'], group['duration'])
-                if group['name'] == 'close':
-                    grasp_m = measured
-        held = grasp_m is not None and grasp_m > self.p('grasp_closed_threshold')
+        grasp_m, _ = self.run_plan(plan)
+        held = self.holding(grasp_m)
         after = self.fresh_detections(newer_than=time.monotonic() + 0.3, timeout=4.0)
         place = D.verify_place(cube['label'], cube['xyz'][:2], target_xy, [o for o in after['objects'] if o.get('xyz')],
                                self.p('target_radius')) if after else (False, 'no detections')
@@ -496,12 +576,16 @@ class ScriptedDemo(Node):
               f'-> {"holding" if held else "nothing held"} (threshold {self.p("grasp_closed_threshold")}); '
               f'place: {"ok" if place[0] else "failed"} ({place[1]})')
         self.session['trials'] += 1
+        self.note_outcome(cube, (held or not self.p('check_grasp')) and (place[0] or not self.p('check_place')))
         return 'trial'
 
     def print_summary(self):
         s = self.session
         if not self.record:
             print(f'  📊  {s["trials"]} trial episode(s) run (nothing recorded), {s["skipped"]} skipped')
+            if self.until_clear and self.initial_count:
+                print(f'  📊  {self.placed} of {self.initial_count} object(s) placed in {self.attempts} attempt(s), '
+                      f'{len(self.fail_log)} failed pick(s)')
             return
         print(f'  📊  {s["success"]} success, {s["failure"]} failure, {s["deleted"]} deleted, {s["skipped"]} skipped, '
               f'{s["seconds"] / 60:.1f} min recorded -> {self.data_dir}')
@@ -544,6 +628,7 @@ def main(args=None):
     print('=' * 66)
     print(f'  Saving to: {node.data_dir}' if node.record else '  🧪  TRIAL MODE: episodes are executed but NOT recorded')
     print(f'  Prompt: "{node.template}"  colours {node.colors}, speed caps j1..j4 {list(node.cfg.max_joint_vel)} rad/s')
+    print(f'  Scene: table_z {node.cfg.table_z * 1000:.1f} mm, cube_size {node.cfg.cube_size * 1000:.1f} mm (grasp height = table_z + cube_size/2)')
     print(f'  Checks: grasp {node.p("check_grasp")}, place {node.p("check_place")}. Topics: {", ".join(node.topics)}')
     print('  p = pause after this episode, ENTER = continue, q = quit after this episode, Ctrl+C = abort now')
     print('=' * 66)
@@ -561,11 +646,22 @@ def main(args=None):
                 state['event'].clear()
                 state['event'].wait()
                 continue
+            if node.until_clear and node.initial_count and node.attempts >= node.initial_count * node.max_attempts:
+                print(f'  🏁  Stopping: {node.attempts} attempts used (objects × {node.max_attempts}).')
+                break
             try:
                 if node.run_episode() in ('saved', 'trial'):
                     saved += 1
                 if node.quit_requested:
                     state['quit'] = True
+            except Finished as e:
+                print(f'  🏁  {e}')
+                if node.until_clear:
+                    break
+                node.session['skipped'] += 1
+                node.hold()
+                print('  ⏸️  Rearrange the objects, then ENTER = continue, q = quit.')
+                state['pause'] = True
             except Aborted as e:
                 node.session['skipped'] += 1
                 print(f'  ⚠️  {e}')

@@ -174,19 +174,35 @@ half the object's height. If not, fix calibration, `table_z` or `cube_size` befo
 (`max_joint_vel [0.3, 0.2, 0.4, 0.5]`). Press **ENTER** on a plan and watch: the arm goes READY → above the object → down →
 close → up → over the marker → down → open → up → READY. Press **Ctrl+C** at any moment: the arm holds.
 
+**Step D2: is the arm reaching the table? 🔧** Before every close the script prints where the fingertip really is:
+```
+📏  before closing: fingertip z 12.4 mm (planned 12.5, table_z 0.0), xy error 3.1 mm, z error -0.1 mm
+```
+The robot's z = 0 is the origin of its first link, **not necessarily the table surface** (the model's base plate extends to about
+−8 mm and ROBOTIS's shoulder height suggests up to −17 mm). Measure it: put the fingertip centre flat on the table (homing
+option 1 = torque off, by hand) and read its z, for example from `calibrate_camera` (it prints the fingertip z of every tag
+touch; the tags lie flat on the table) — that value is `table_z`, usually a **negative** number of 1–2 cm. If the printed
+`z error` is within a few mm but the fingers still hover above the table, `table_z` (or the fingertip model) is the cause; if the
+z error is large, the arm did not arrive (lag, joint 2 load).
+
 **Step E: grasp threshold 🔧.** Each run prints the gripper position after closing and both checks:
 ```
-🧪  trial (not recorded): gripper after closing 0.0042 m -> holding (threshold -0.007); place: ok (cube no longer visible ...)
+🧪  trial (not recorded): gripper after closing 0.0042 m -> holding (threshold 0.016); place: ok (cube no longer visible ...)
 ```
 Close the gripper once on nothing and once on an object (`joint_commander`), note the two `gripper_left_joint` values, and put
 `grasp_closed_threshold` between them.
 
-**Step F: several objects.** Put 2–3 objects down, keep ENTER-ing through the plans. Each object is placed at the next spot
+**Step F: several objects, clearing the table.** Put 2–3 objects down and keep ENTER-ing through the plans. It counts the objects
+at the first look (`🧮 3 object(s) to place`), runs exactly until all are on the marker, and stops by itself (`🏁 3 object(s) on the
+marker`). **Failures are retried:** a grasp with nothing in the gripper is caught right after closing (`✋ … backing out`: lift,
+open, back to READY), and an object that did not end up on the marker is picked again on the next round. It gives up on an object
+after `max_attempts_per_object` (3) failed tries and stops the whole run after objects × 3 attempts. Each object is placed at the next spot
 around the marker (centre, then ±5 cm in x and y, `place_offsets`) so they do not land on each other; the marker is covered
 by the first object, so the script keeps using its last seen position (it prints `[target tag covered…]`). Objects already
 within 8 cm of the marker are not picked again. When no reachable object is left it pauses: put the objects back, ENTER.
 
-**Pass when ≥ 8 of 10 picks succeed** (object ends up on the marker). Then set `confirm: false` and raise
+**Pass when it clears the table with at most about 1 failed attempt per 4 picks** (e.g. 3 objects placed in ≤ 4 attempts, repeated
+with different layouts; the final `📊` line gives placed / attempts / failed picks). Then set `confirm: false` and raise
 `max_joint_vel` towards the default `[0.5, 0.3, 0.6, 0.8]` (shoulder last), watching for joint2 errors (`0x20`).
 
 | Symptom | Likely cause |
@@ -272,7 +288,7 @@ Evaluate the 5k/10k/15k checkpoints early (`IMPLEMENTATION_PLAN.md` T6.3).
 | `no target (AprilTag) visible` | tag covered, too small, or not in `target_tags` |
 | `no reachable cube` | cubes outside `workspace_x/y` or out of reach; it pauses: move them closer, ENTER |
 | grasps miss by a constant offset | calibration (§4), `table_z`, `cube_size`/`object_size` |
-| every trial says "nothing held" | `grasp_closed_threshold` too high (§6) |
+| every trial says "nothing held" | `grasp_closed_threshold` too low: it must lie between the closed-on-nothing value (0.019) and the value with an object held |
 | place check fails although the cube is in the bin | `target_radius` too small, or `target_xy_offset` wrong |
 | `/joint_states: 0.5 s gap` → episode deleted | load spike on the PC; if frequent: `storage_preset: "none"`, close other programs |
 | joint2 overload (`0x20`) | lower `max_joint_vel` (shoulder value first); report it |

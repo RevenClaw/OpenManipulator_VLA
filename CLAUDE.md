@@ -25,7 +25,7 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
     (use [3] when MoveIt flags home as `START_STATE_IN_COLLISION`, issue #12).
     `z` key → min-stress exit pose, then [1] back to session home or [2] torque off + quit (ends the launch).
   - `joint_commander.py` — terminal: `<j1°> <j2°> <j3°> <j4°> <gripper 0|1>` → `FollowJointTrajectory` on `arm_controller`.
-    Defines `JOINT_LIMITS`, `GRIPPER_OPEN_M` (0.019), `GRIPPER_CLOSE_M` (−0.010). Gripper → `GripperCommand` on `/gripper_controller/gripper_cmd`
+    Defines `JOINT_LIMITS`, `GRIPPER_OPEN_M` (−0.010), `GRIPPER_CLOSE_M` (0.019): this arm's gripper is physically inverted w.r.t. ROBOTIS's convention (found 2026-11-19). Gripper → `GripperCommand` on `/gripper_controller/gripper_cmd`
     (issue #1 fixed 2026-11-02, not yet tested on hardware).
   - `ee_commander.py` — Cartesian goals. Closed-form 4-DOF IK (`inverse_kinematics`, `forward_kinematics`) → MoveIt `/move_action`
     (plan + execute) → gripper via `GripperCommand`. Inputs: terminal `x y z pitch° [grip]` or topic `/ee_goal`
@@ -52,7 +52,7 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
     action `/arm_controller/follow_joint_trajectory`, topic `/arm_controller/joint_trajectory`. `allow_partial_joints_goal: true`.
   - `gripper_controller` — `GripperActionController` on `gripper_left_joint` (metres), **action only**: `/gripper_controller/gripper_cmd`.
   - `joint_state_broadcaster` → `/joint_states`.
-- Joint limits (rad): j1 [−π, π], j2 [−1.82, 1.5], j3 [−1.5, 1.55], j4 [−1.7, 1.97]. Gripper [−0.010, 0.019] m.
+- Joint limits (rad): j1 [−π, π], j2 [−1.82, 1.5], j3 [−1.5, 1.55], j4 [−1.7, 1.97]. Gripper [−0.010, 0.019] m, **−0.010 = open, +0.019 = closed** (inverted vs ROBOTIS's stock convention; all copies of the two values must agree).
 - Frame for Cartesian goals: `world` = `link1` (base), x forward, y left, z up. EE = `end_effector_link`. Pitch 0 = horizontal, +90° = down.
   Yaw is forced to `atan2(y, x)`, roll = 0 (4-DOF cannot do arbitrary orientation).
 - Home `[0.6090, -1.3622, 1.3898, -0.0154]`; min-stress exit `[0.4633, -1.8190, 1.4972, 0.4019]`.

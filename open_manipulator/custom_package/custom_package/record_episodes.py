@@ -46,11 +46,11 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 
 from custom_package import check_episode
 from custom_package import episode_tools as E
+from custom_package.joint_commander import GRIPPER_OPEN_M
 from custom_package.recording import BagRecorder
 from custom_package.recording import StreamMonitor
 
 ARM_JOINTS = ['joint1', 'joint2', 'joint3', 'joint4']
-GRIPPER_OPEN_M = 0.019
 
 
 def _duration(msg, seconds):

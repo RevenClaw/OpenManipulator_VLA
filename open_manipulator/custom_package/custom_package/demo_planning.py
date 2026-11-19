@@ -277,6 +277,14 @@ def fingertip_heights(plan):
 
 
 # --------------------------------------------------------------------------------------------- tasks and checks
+def gripper_holding(measured_m, threshold_m, open_m, close_m):
+    """True if the gripper stopped on something: its position is on the OPEN side of threshold_m (between the fully closed end
+    and the open end). Works for either polarity of the gripper joint (open_m > close_m or open_m < close_m)."""
+    if measured_m is None:
+        return False
+    return (measured_m - threshold_m) * (open_m - close_m) > 0
+
+
 def place_offset(offsets, index):
     """Drop-point offset (dx, dy) in m for the index-th placement, cycling through the flat list [dx0, dy0, dx1, dy1, ...].
     Lets several objects be set down around one marker without landing on each other. [0, 0] = always the marker centre."""

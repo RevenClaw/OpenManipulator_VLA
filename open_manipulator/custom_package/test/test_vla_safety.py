@@ -20,10 +20,11 @@ HOME = np.array([0.6090, -1.3622, 1.3898, -0.0154])
 
 
 def test_gripper_convention():
-    assert S.gripper_metres_to_norm(0.019) == 0.0  # open
-    assert S.gripper_metres_to_norm(-0.010) == 1.0  # closed
-    assert S.gripper_metres_to_norm(0.020) == 0.0 and S.gripper_metres_to_norm(-0.011) == 1.0  # clipped
-    assert S.gripper_norm_to_metres(1.7) == pytest.approx(-0.010)
+    # This arm's physical polarity: -0.010 m opens the gripper, +0.019 m closes it.
+    assert S.gripper_metres_to_norm(-0.010) == 0.0  # open
+    assert S.gripper_metres_to_norm(0.019) == 1.0  # closed
+    assert S.gripper_metres_to_norm(-0.011) == 0.0 and S.gripper_metres_to_norm(0.020) == 1.0  # clipped
+    assert S.gripper_norm_to_metres(1.7) == pytest.approx(0.019)
     for q in np.linspace(-0.010, 0.019, 11):
         assert S.gripper_norm_to_metres(S.gripper_metres_to_norm(q)) == pytest.approx(q)
 

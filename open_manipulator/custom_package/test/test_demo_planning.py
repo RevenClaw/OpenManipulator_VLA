@@ -129,3 +129,11 @@ def test_placing_on_a_flat_marker_releases_just_above_the_table():
     plan = D.plan_pick_place((0.2, 0.05), (0.14, -0.1), cfg)
     lowest = min(forward_kinematics(q)[2] for q in next(s for s in plan.segments if s.name == 'lower').joints)
     assert abs(lowest - 0.025) < 0.002 and abs(plan.waypoints['release'][2] - 0.025) < 1e-9
+
+
+def test_gripper_holding_works_for_either_polarity():
+    # This arm: open -0.010, closed 0.019. Closed on nothing (0.019) -> not holding; stopped at a cube (0.004) -> holding.
+    assert D.gripper_holding(0.004, 0.016, -0.010, 0.019) and not D.gripper_holding(0.019, 0.016, -0.010, 0.019)
+    assert not D.gripper_holding(None, 0.016, -0.010, 0.019)
+    # The stock ROBOTIS polarity (open 0.019, closed -0.010) with the mirrored threshold behaves the same way.
+    assert D.gripper_holding(0.004, -0.007, 0.019, -0.010) and not D.gripper_holding(-0.010, -0.007, 0.019, -0.010)

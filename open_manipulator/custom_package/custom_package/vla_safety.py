@@ -21,9 +21,9 @@ IMAGE_SIZE = 224
 ACTION_DIM = 5  # [j1, j2, j3, j4, gripper_norm]
 
 # Gripper convention: metres on gripper_left_joint <-> [0, 1] in the model, 0 = open, 1 = closed.
-# Same values as joint_commander.GRIPPER_OPEN_M / GRIPPER_CLOSE_M.
-GRIPPER_OPEN_M = 0.019
-GRIPPER_CLOSE_M = -0.010
+# Same values as joint_commander.GRIPPER_OPEN_M / GRIPPER_CLOSE_M (see the polarity note there: -0.010 m opens this arm's gripper).
+GRIPPER_OPEN_M = -0.010
+GRIPPER_CLOSE_M = 0.019
 
 
 def gripper_metres_to_norm(q):
