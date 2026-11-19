@@ -13,6 +13,8 @@ Read `docs/` before changing behaviour. It is the record of what was changed and
 - `docs/joint_offset_investigation.md` — servo Homing Offset calibration (why the URDF is stock again)
 - `docs/SYSTEM_WORKFLOW_ARCHITECTURE_MANUAL.md` — architecture, node graph, topics/services/actions
 - `docs/input_needed.md` — how a VLA node sends end-effector goals to `ee_commander` via `/ee_goal`, and the limits of that path
+- `docs/custom_commands_guide.md` — quick list of the day-to-day commands (robot launch, bridge, pipeline test §10, recorded demos §11)
+- `docs/finetuning_procedure.md` — exact step-by-step procedure: scripted YOLO demos → dataset → π0.5 fine-tune (section 6 = pipeline test)
 
 Keep these docs updated when behaviour changes (the user expects it; issue #6 is about docs drifting).
 
@@ -40,7 +42,13 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
     `object_detector.py` (YOLO cubes + AprilTag targets from the ROS color + aligned-depth topics → world-frame positions in m,
     `~/detections` JSON, `~/annotated` image), `calibrate_camera.py` (touch tags → Kabsch camera→world, `/workspace/calibration/`),
     `scripted_demo.py` (task → plan → execute → `/teleop/action` → record → checks → metadata; `record:=false` = trials; `config/pick_place_test.yaml` = the pipeline test: any object → marker tag 20, `confirm` shows each plan first),
-    pure modules `perception_tools.py` and `demo_planning.py` (unit-tested). YOLO model: `/workspace/models/yolo_cubes.pt`.
+    pure modules `perception_tools.py` and `demo_planning.py` (unit-tested). YOLO model: `/workspace/models/yolo_cubes.pt`
+    (copied from the collaborator's `yolo_pipeline/YOLO_MODEL/YOLO.pt`, classes red/green/blue; that folder is reference only).
+    `launch/pick_place_test.launch.py` starts camera (depth) + detector (tag 20 = "marker"). Test mode (`until_clear`, `confirm`,
+    `remember_targets`, `place_offsets` in `scripted_demo`): counts the objects, retries failed picks (≤ 3 per object, ≤ objects × 3 in
+    total), backs out after a failed grasp, keeps a covered tag's last position, drops successive objects 5 cm apart around the tag.
+    Grasp height = `table_z + cube_size/2` from the config only (the camera supplies x, y). `table_z` is NOT necessarily 0: z = 0 is
+    link1's origin, the table is probably 8–17 mm lower; measure it (the fingertip z that `calibrate_camera` prints for tags on the table).
   - **READY** = `episode_tools.READY` `[0.0, -0.2547, -0.1520, 1.6284]` (gripper 70° down at (0.16, 0, 0.12) m): start pose of every
     demo and policy run. HOME (folded, gripper horizontal) is only the session/storage pose.
   - `log_joint_states.py`, `log_ee_pose.py` (live EE x y z + pitch from `/joint_states` via `ee_commander.forward_kinematics`), `record_home_position.py`
@@ -52,7 +60,7 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
     action `/arm_controller/follow_joint_trajectory`, topic `/arm_controller/joint_trajectory`. `allow_partial_joints_goal: true`.
   - `gripper_controller` — `GripperActionController` on `gripper_left_joint` (metres), **action only**: `/gripper_controller/gripper_cmd`.
   - `joint_state_broadcaster` → `/joint_states`.
-- Joint limits (rad): j1 [−π, π], j2 [−1.82, 1.5], j3 [−1.5, 1.55], j4 [−1.7, 1.97]. Gripper [−0.010, 0.019] m, **−0.010 = open, +0.019 = closed** (inverted vs ROBOTIS's stock convention; all copies of the two values must agree).
+- Joint limits (rad): j1 [−π, π], j2 [−1.82, 1.5], j3 [−1.5, 1.55], j4 [−1.7, 1.97]. Gripper [−0.010, 0.019] m, **−0.010 = open, +0.019 = closed** (known issue #15; the MoveIt SRDF named states `open`/`close` are swapped too) (inverted vs ROBOTIS's stock convention; all copies of the two values must agree).
 - Frame for Cartesian goals: `world` = `link1` (base), x forward, y left, z up. EE = `end_effector_link`. Pitch 0 = horizontal, +90° = down.
   Yaw is forced to `atan2(y, x)`, roll = 0 (4-DOF cannot do arbitrary orientation).
 - Home `[0.6090, -1.3622, 1.3898, -0.0154]`; min-stress exit `[0.4633, -1.8190, 1.4972, 0.4019]`.
