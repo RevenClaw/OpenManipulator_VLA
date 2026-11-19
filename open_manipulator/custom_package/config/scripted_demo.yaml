@@ -32,10 +32,10 @@ scripted_demo:
     min_free_gb: 5.0
 
     # Scene and motion (measure these on your setup)
-    table_z: 0.0                      # m, table surface in the world frame (0 if the base stands on the table)
+    table_z: -0.07                    # m, table surface in the world frame (0 if the base stands on the table)
     cube_size: 0.025                  # m
-    bin_height: 0.04                  # m, rim height of the target above the table
-    release_clearance: 0.03           # m above the rim when opening
+    bin_height: 0.0                   # m, rim height of the target above the table (0 = flat marker; measure it for a tray/bin)
+    release_clearance: 0.015          # m above the rim when opening (flat marker: cube_size/2 + ~2.5 mm; bin: ~0.02-0.03)
     target_xy_offset: [0.0, 0.0]      # m from the target's AprilTag to the drop point (0 if the tag is at the bin centre)
     max_joint_vel: [0.5, 0.3, 0.6, 0.8]   # rad/s per joint (j2 = shoulder, overloads: keep low). The policy learns these
                                       # speeds: set vla_bridge's max_joint_vel_per_joint to the same values for policy runs
