@@ -74,7 +74,10 @@ ros2 run open_manipulator_teleop open_manipulator_x_teleop
 ```bash
 ros2 run custom_package log_joint_states                               # live joint angles, rad and degrees
 ros2 run custom_package log_joint_states --ros-args -p log_rate_hz:=10.0
+ros2 run custom_package log_ee_pose                                    # live end-effector x y z (m, base frame) + pitch°
+ros2 run custom_package log_ee_pose --ros-args -p once:=true            # one line, then exit
 ```
+`log_ee_pose` uses the same forward kinematics as `ee_commander`; its last column can be typed straight into `ee_commander`.
 
 ## 8. VLA bridge
 

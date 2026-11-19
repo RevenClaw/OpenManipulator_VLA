@@ -43,7 +43,7 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
     pure modules `perception_tools.py` and `demo_planning.py` (unit-tested). YOLO model: `/workspace/models/yolo_cubes.pt`.
   - **READY** = `episode_tools.READY` `[0.0, -0.2547, -0.1520, 1.6284]` (gripper 70° down at (0.16, 0, 0.12) m): start pose of every
     demo and policy run. HOME (folded, gripper horizontal) is only the session/storage pose.
-  - `log_joint_states.py`, `record_home_position.py`
+  - `log_joint_states.py`, `log_ee_pose.py` (live EE x y z + pitch from `/joint_states` via `ee_commander.forward_kinematics`), `record_home_position.py`
   - `launch/open_manipulator_x_interactive.launch.py` — hardware bringup + homing node (main launch).
 
 ## Robot facts

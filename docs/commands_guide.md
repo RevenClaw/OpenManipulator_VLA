@@ -153,6 +153,15 @@ ros2 run custom_package log_joint_states
 ros2 run custom_package log_joint_states --ros-args -p log_rate_hz:=10.0
 ```
 
+### End-effector position (x, y, z, pitch)
+```bash
+ros2 run custom_package log_ee_pose                              # 5 Hz; -p log_rate_hz:=10.0
+ros2 run custom_package log_ee_pose --ros-args -p once:=true      # one reading, then exit
+```
+Prints `end_effector_link` in the base (`world`) frame: x forward, y left, z up (m), pitch 0 = horizontal, +90° = down.
+Computed from `/joint_states` with the same forward kinematics as `ee_commander`, so the last column (`x y z pitch°`) can be typed
+straight into `ee_commander` to return to this pose.
+
 ---
 
 ## 🤖 Step 5: VLA Bridge — let a policy server drive the arm (✅ tested 2026-11-01; front camera tested 2026-11-01 on mock hardware)
