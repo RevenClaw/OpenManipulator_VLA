@@ -31,7 +31,7 @@ scripted_demo:
     target_radius: 0.08               # objects within 8 cm of the marker count as "already placed" and are not picked again
 
     # Scene (measure)
-    table_z: 0.0                      # m, table surface in the robot frame (the average tag height calibrate_camera printed)
+    table_z: -0.0564                      # m, table surface in the robot frame (the average tag height calibrate_camera printed)
     cube_size: 0.025                  # m, edge of the objects (object_detector.yaml: object_size)
     workspace_x: [0.08, 0.30]         # m in front of the base; objects outside are ignored
     workspace_y: [-0.22, 0.22]

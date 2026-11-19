@@ -26,6 +26,7 @@ setup(
             'record_home_position = custom_package.record_home_position:main',
             'interactive_homing_node = custom_package.interactive_homing_node:main',
             'log_joint_states = custom_package.log_joint_states:main',
+            'log_ee_pose = custom_package.log_ee_pose:main',
             'joint_commander = custom_package.joint_commander:main',
             'ee_commander = custom_package.ee_commander:main',
             'vla_bridge = custom_package.vla_bridge:main',
