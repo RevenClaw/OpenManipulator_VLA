@@ -33,7 +33,7 @@ scripted_demo:
 
     # Scene and motion (measure these on your setup)
     table_z: -0.07                    # m, table surface in the world frame (0 if the base stands on the table)
-    cube_size: 0.025                  # m
+    cube_size: 0.035                  # m
     bin_height: 0.0                   # m, rim height of the target above the table (0 = flat marker; measure it for a tray/bin)
     release_clearance: 0.015          # m above the rim when opening (flat marker: cube_size/2 + ~2.5 mm; bin: ~0.02-0.03)
     target_xy_offset: [0.0, 0.0]      # m from the target's AprilTag to the drop point (0 if the tag is at the bin centre)

@@ -33,7 +33,7 @@ scripted_demo:
 
     # Scene (measure)
     table_z: -0.07                      # m, table surface in the robot frame (the average tag height calibrate_camera printed)
-    cube_size: 0.025                  # m, edge of the objects (object_detector.yaml: object_size)
+    cube_size: 0.035                  # m, edge of the objects (object_detector.yaml: object_size)
     workspace_x: [0.08, 0.30]         # m in front of the base; objects outside are ignored
     workspace_y: [-0.22, 0.22]
 
