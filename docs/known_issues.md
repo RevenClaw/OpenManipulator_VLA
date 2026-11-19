@@ -236,3 +236,7 @@ deferred. All paths are relative to `open_manipulator/`.
   −8 mm..0 and the model's shoulder is 59.5 mm up where ROBOTIS lists 77 mm, so the real table is probably 8–17 mm below z = 0, and
   `table_z: 0.0` puts the grasp that much too high. Measure `table_z` (fingertip on the table, see `finetuning_procedure.md` D2).
   `scripted_demo` now prints the measured fingertip height against the plan before each close (`📏 …`) and `table_z` in its banner.
+* **Per-colour targets in the pipeline test (2026-11-19):** blue → tag 19, green → tag 25, red ignored (`colors`, `color_targets` in
+  `config/pick_place_test.yaml`, `targets:=` on the launch). Drop offsets are now counted per tag, and a colour whose tag was never seen
+  is skipped with a warning (it was wrongly counted as "already on its target"). Tested in simulation with three colours and two tags:
+  2 objects counted, red untouched, a failed green pick retried, 2 of 2 placed in 3 attempts.

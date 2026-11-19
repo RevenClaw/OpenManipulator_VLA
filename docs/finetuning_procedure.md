@@ -29,8 +29,9 @@ stock photo, the real converter), **nothing yet on the real arm or with the real
   the model only knows these three classes and forces anything else into one of them (a yellow cube was detected as "green"
   in testing).
 - One target: a **flat tray or shallow bin** that the arm can reach, with an **AprilTag 36h11** (e.g. ID 20) flat at its centre.
-- 4–6 more AprilTags (IDs 16–19, …) for calibration, flat on the table, spread over the workspace. Printable tags:
-  `yolo_pipeline/data/tags/`. Print them about 4–5 cm wide.
+- 4–6 more AprilTags for calibration, flat on the table, spread over the workspace, with ids that are not used as targets. For the
+  pipeline test (targets 19 and 25) use 16, 17, 18 and 20; for recorded demos with the bin on 20 use 16–19. A target tag can also serve
+  as a calibration point if the fingertip can reach it. Printable tags: `yolo_pipeline/data/tags/` (16–20, 24, 25, 27). Print them about 4–5 cm wide.
 
 ---
 
@@ -125,14 +126,18 @@ ros2 run custom_package calibrate_camera
 
 ---
 
-## 6. Pipeline test: pick any coloured object, place it on marker 20 (no recording)
+## 6. Pipeline test: blue object → tag 19, green object → tag 25 (no recording)
 Do this **before** recording anything: it proves detection, calibration, grasping and the motion work together. The test
-config `config/pick_place_test.yaml` picks any object YOLO labels red, green or blue, in random order, and places it **on
-AprilTag 20, "the marker"** (not in a bin), lowering the fingertips to just above the table and letting go. Nothing is recorded.
+config `config/pick_place_test.yaml` places every **blue** object **on AprilTag 19** ("blue marker") and every **green** object **on
+AprilTag 25** ("green marker"), in random order, lowering the fingertips to just above the table and letting go (not into a bin).
+**Red objects are ignored.** It does exactly as many episodes as there are blue and green objects (plus retries after failures) and then
+stops. Nothing is recorded. To change the colours or tags: `colors` and `color_targets` in the yaml, and `targets:="19:blue marker,25:green marker"`
+on the launch (the names must match).
 
-**What you need on the table:** the marker (tag 20, flat on the table, 12–25 cm from the base, away from where objects lie,
-at least 8 cm from every object) and 1–3 small coloured objects about the size of the cubes (`cube_size`, default 2.5 cm).
-No other coloured things in view (YOLO only knows red, green and blue and forces anything else into one of them).
+**What you need on the table:** tags 19 and 25 flat on the table, 12–25 cm from the base, away from where objects lie (at least 8 cm
+from every object), and 1–3 small blue/green objects about the size of the cubes (`cube_size`, default 2.5 cm). Red ones may stay on
+the table. The calibration tags must use other ids (§0). No other coloured things in view (YOLO only knows red, green and blue and
+forces anything else into one of them).
 
 **Terminals** (each: `source /root/ros2_ws/install/setup.bash`; the container needs `install_vla_deps.sh` and the YOLO model
 from §1 first):
@@ -141,7 +146,7 @@ from §1 first):
 zenohd
 # T1: arm, homing menu option 2 (HOME). scripted_demo itself moves the arm from HOME to READY before each pick.
 ros2 launch custom_package open_manipulator_x_interactive.launch.py port_name:=/dev/ttyUSB0
-# T2: camera with depth + object_detector in one launch (the detector names tag 20 "marker")
+# T2: camera with depth + object_detector in one launch (tag 19 = "blue marker", tag 25 = "green marker")
 ros2 launch custom_package pick_place_test.launch.py
 # T3 (optional): rviz2, Add → By topic → /object_detector/annotated → Image, and /object_detector/markers → MarkerArray
 rviz2

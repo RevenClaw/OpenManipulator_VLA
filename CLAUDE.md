@@ -41,10 +41,10 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
   - Scripted demonstrations for fine-tuning (issue #14; procedure: `docs/finetuning_procedure.md`):
     `object_detector.py` (YOLO cubes + AprilTag targets from the ROS color + aligned-depth topics → world-frame positions in m,
     `~/detections` JSON, `~/annotated` image), `calibrate_camera.py` (touch tags → Kabsch camera→world, `/workspace/calibration/`),
-    `scripted_demo.py` (task → plan → execute → `/teleop/action` → record → checks → metadata; `record:=false` = trials; `config/pick_place_test.yaml` = the pipeline test: any object → marker tag 20, `confirm` shows each plan first),
+    `scripted_demo.py` (task → plan → execute → `/teleop/action` → record → checks → metadata; `record:=false` = trials; `config/pick_place_test.yaml` = the pipeline test: blue → tag 19, green → tag 25, red ignored; `confirm` shows each plan first),
     pure modules `perception_tools.py` and `demo_planning.py` (unit-tested). YOLO model: `/workspace/models/yolo_cubes.pt`
     (copied from the collaborator's `yolo_pipeline/YOLO_MODEL/YOLO.pt`, classes red/green/blue; that folder is reference only).
-    `launch/pick_place_test.launch.py` starts camera (depth) + detector (tag 20 = "marker"). Test mode (`until_clear`, `confirm`,
+    `launch/pick_place_test.launch.py` starts camera (depth) + detector (`targets:="19:blue marker,25:green marker"`). Test mode (`until_clear`, `confirm`,
     `remember_targets`, `place_offsets` in `scripted_demo`): counts the objects, retries failed picks (≤ 3 per object, ≤ objects × 3 in
     total), backs out after a failed grasp, keeps a covered tag's last position, drops successive objects 5 cm apart around the tag.
     Grasp height = `table_z + cube_size/2` from the config only (the camera supplies x, y). `table_z` is NOT necessarily 0: z = 0 is

@@ -107,14 +107,14 @@ In the bridge's own terminal, `s` prints the same status. `last_fault` says why 
 
 ## 10. Pick-and-place pipeline test (YOLO + scripted demo, nothing recorded)
 
-Pick **any** red/green/blue object and place it **on AprilTag 20** ("the marker"). Needs the Zenoh router (§1) and the robot launch (§3,
+Place every **blue** object **on AprilTag 19** and every **green** object **on AprilTag 25** (red ones are ignored). Needs the Zenoh router (§1) and the robot launch (§3,
 homing option 2) first. Once per container start: `bash /root/ros2_ws/src/open_manipulator/docker/install_vla_deps.sh`, with the
 model in `workspace/models/yolo_cubes.pt`. Full procedure with checks and troubleshooting: `docs/finetuning_procedure.md`, section 6.
 
 ```bash
-# Camera (with depth) + object_detector, one launch. Leave it running. Tag 20 is named "marker".
+# Camera (with depth) + object_detector, one launch. Leave it running. Tag 19 = "blue marker", tag 25 = "green marker".
 ros2 launch custom_package pick_place_test.launch.py
-ros2 launch custom_package pick_place_test.launch.py model_path:=/workspace/models/yolo_cubes.pt marker_id:=20   # the defaults
+ros2 launch custom_package pick_place_test.launch.py model_path:=/workspace/models/yolo_cubes.pt targets:="19:blue marker,25:green marker"   # the defaults
 
 # Look at what it sees (RViz: Add → By topic → /object_detector/annotated → Image)
 rviz2
@@ -128,7 +128,7 @@ ros2 run custom_package scripted_demo --ros-args --params-file \
     $(ros2 pkg prefix custom_package)/share/custom_package/config/pick_place_test.yaml
 ```
 **How it ends:** it counts the objects at the first look (`🧮 N object(s) to place`) and keeps going until every one is on the
-marker, then stops by itself (`🏁 N object(s) on the marker`). **Failed picks are retried:** if nothing is in the gripper after
+its tag, then stops by itself (`🏁 N object(s) on their target`). **Failed picks are retried:** if nothing is in the gripper after
 closing, the arm lifts, opens and returns to start (`✋ … backing out`); if the object is not on the marker afterwards, it is simply
 picked again on the next round. Per object it gives up after 3 failed attempts, and the whole run stops after objects × 3 attempts
 (`max_attempts_per_object`), so a bad object cannot loop forever. Progress line after each attempt: `📈 1 of 2 placed, 2 attempt(s), 1 failed`.
@@ -140,7 +140,7 @@ Useful variations (add to the `scripted_demo` command):
 -p "max_joint_vel:=[0.5, 0.3, 0.6, 0.8]"   # faster (j1..j4 rad/s; default in the test config: [0.3, 0.2, 0.4, 0.5])
 -p table_z:=0.012 -p cube_size:=0.03       # scene values: table height in the robot frame, object edge (m)
 -p grasp_closed_threshold:=0.014           # gripper position (m) at or above which "nothing is held" (closed end = 0.019)
--p "colors:=['red']"                       # pick only red objects
+-p "colors:=['blue']"                      # pick only blue objects (green ones are then left alone)
 -p seed:=1                                 # same choices every run
 ```
 Keys while it runs: `p` pause after this episode, ENTER continue, `q` quit after this episode.

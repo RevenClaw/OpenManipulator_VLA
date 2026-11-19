@@ -1,5 +1,6 @@
-# Pipeline test (before any fine-tuning data is recorded): pick up ANY detected coloured object (YOLO classes red / green /
-# blue) and place it on AprilTag 20, the "marker". Nothing is recorded. Procedure: docs/finetuning_procedure.md, section 6.
+# Pipeline test (before any fine-tuning data is recorded): the BLUE object goes onto AprilTag 19 and the GREEN object onto AprilTag 25
+# (red objects are ignored). It runs exactly until every blue and green object is on its tag, retrying failed picks. Nothing is
+# recorded. The tag ids and names come from pick_place_test.launch.py (targets:=...); the names must match color_targets below. Procedure: docs/finetuning_procedure.md, section 6.
 #
 #   ros2 run custom_package scripted_demo --ros-args --params-file \
 #       $(ros2 pkg prefix custom_package)/share/custom_package/config/pick_place_test.yaml
@@ -17,18 +18,18 @@ scripted_demo:
     episodes: 0                       # 0 = no extra limit
 
     # What to pick and where to put it
-    colors: ["red", "green", "blue"]  # every class the YOLO model knows; objects are picked in random order
-    color_targets: [""]               # empty: all objects go to the one target tag
+    colors: ["blue", "green"]         # YOLO classes that are picked (red is left alone); picked in random order
+    color_targets: ["blue:blue marker", "green:green marker"]   # "<colour>:<target name>", names from the launch file's targets
     prompt_template: "pick up the {color} object and place it on the {target}"
-    # Placing ON the marker: the fingertip is lowered to cube_size/2 + release_clearance above the table (bin_height 0),
+    # Placing ON a marker: the fingertip is lowered to cube_size/2 + release_clearance above the table (bin_height 0),
     # i.e. the object is released ~2.5 mm above the paper. Each placement lands at the next offset around the tag centre
-    # (flat list of dx, dy in metres), so objects don't land on each other. The tag is covered by the first placed object:
-    # remember_targets keeps using its last seen position.
+    # (flat list of dx, dy in metres, counted per tag), so objects of one colour don't land on each other. A tag is covered by
+    # the first object placed on it: remember_targets keeps using its last seen position.
     bin_height: 0.0
     release_clearance: 0.015
     place_offsets: [0.0, 0.0,  0.05, 0.0,  -0.05, 0.0,  0.0, 0.05,  0.0, -0.05]
     remember_targets: true
-    target_radius: 0.08               # objects within 8 cm of the marker count as "already placed" and are not picked again
+    target_radius: 0.08               # an object within 8 cm of ITS tag counts as "already placed" and is not picked again
 
     # Scene (measure)
     table_z: -0.07                      # m, table surface in the robot frame (the average tag height calibrate_camera printed)

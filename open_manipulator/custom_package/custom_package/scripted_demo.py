@@ -135,7 +135,9 @@ class ScriptedDemo(Node):
         self.target_offset = np.array(p('target_xy_offset'), float)
         self.known_targets = {}       # tag id -> last detected target (a placed object can cover its tag)
         self.attempts = 0             # episodes actually executed
-        self.placed = 0               # objects successfully placed (selects the next place_offsets entry)
+        self.placed = 0               # objects successfully placed
+        self.placed_at = {}           # target tag id -> objects placed there (selects the next place_offsets entry per target)
+        self.warned_no_target = set()
         self.until_clear = bool(p('until_clear'))
         self.max_attempts = int(p('max_attempts_per_object'))
         self.initial_count = None     # until_clear: objects to place, counted at the first look
@@ -340,30 +342,43 @@ class ScriptedDemo(Node):
             if self.until_clear and self.attempts:
                 raise Finished('no objects left in the workspace')
             raise Aborted('no reachable cube among 0 detected')
-        items, at_target, given_up = [], 0, 0
+        items, at_target, given_up, no_target = [], 0, 0, set()
         for cube in cubes:
             if cube['label'] in self.color_targets:
-                options = [t for t in targets if t['name'] == self.color_targets[cube['label']]]
+                matching = [t for t in targets if t['name'] == self.color_targets[cube['label']]]
             else:
-                options = list(targets)
-            options = [t for t in options if np.linalg.norm(np.array(cube['xyz'][:2]) - t['xyz'][:2]) > self.p('target_radius')]
+                matching = list(targets)
+            if not matching:  # this colour's target tag has never been seen (not the same as "already on its target")
+                no_target.add(cube['label'])
+                continue
+            options = [t for t in matching if np.linalg.norm(np.array(cube['xyz'][:2]) - t['xyz'][:2]) > self.p('target_radius')]
             if not options:
                 at_target += 1  # already on its target
             elif self.until_clear and self.failures(cube) >= self.max_attempts:
                 given_up += 1
             else:
                 items.append((cube, options))
+        for label in sorted(no_target - self.warned_no_target):
+            self.warned_no_target.add(label)
+            print(f'  ⚠️  No target tag seen for the {label} object(s) ({self.color_targets.get(label, "any")}): they are skipped '
+                  f'until the camera has seen that tag once.')
         if self.until_clear and self.initial_count is None:
             self.initial_count = len(items)
             print(f'  🧮  {len(items)} object(s) to place; failed picks are retried (up to {self.max_attempts} attempts per object).')
+        if not items and no_target and not at_target:
+            raise Aborted('no target tag seen for: ' + ', '.join(f'{label} ({self.color_targets.get(label, "any")})' for label in sorted(no_target))
+                          + '. Put the tag in the camera view.')
         if not items:
-            raise Finished(f'{at_target} object(s) on the marker' + (f', {given_up} given up after {self.max_attempts} failed attempts' if given_up else ''))
+            raise Finished(f'{at_target} object(s) on their target'
+                           + (f', {given_up} given up after {self.max_attempts} failed attempts' if given_up else '')
+                           + (f'; skipped, target tag never seen: {", ".join(sorted(no_target))}' if no_target else ''))
         reasons = []
         for i in self.rng.permutation(len(items)):
             cube, options = items[i]
             target = options[int(self.rng.integers(len(options)))]
             var = D.sample_variation(self.rng, bool(self.p('variation')), float(self.p('correction_prob')))
-            target_xy = np.array(target['xyz'][:2]) + self.target_offset + D.place_offset(self.p('place_offsets'), self.placed)
+            target_xy = (np.array(target['xyz'][:2]) + self.target_offset
+                         + D.place_offset(self.p('place_offsets'), self.placed_at.get(target['id'], 0)))
             try:
                 plan = D.plan_pick_place(cube['xyz'][:2], target_xy, self.cfg, var)
             except D.PlanningError as e:
@@ -380,10 +395,11 @@ class ScriptedDemo(Node):
         return sum(1 for label, x, y in self.fail_log
                    if label == cube['label'] and np.hypot(x - cube['xyz'][0], y - cube['xyz'][1]) < 0.05)
 
-    def note_outcome(self, cube, success):
-        """Bookkeeping after an executed episode: successes move the next drop point on, failures count against the object."""
+    def note_outcome(self, cube, success, target_id):
+        """Bookkeeping after an executed episode: a success moves that target's next drop point on, a failure counts against the object."""
         if success:
             self.placed += 1
+            self.placed_at[target_id] = self.placed_at.get(target_id, 0) + 1
         else:
             self.fail_log.append((cube['label'], float(cube['xyz'][0]), float(cube['xyz'][1])))
         if self.until_clear and self.initial_count:
@@ -496,7 +512,7 @@ class ScriptedDemo(Node):
         if problems and self.record:
             raise Aborted('not ready: ' + '; '.join(problems))
         if not self.record:
-            return self.trial(plan, cube, target_xy)
+            return self.trial(plan, cube, target_xy, target['id'])
 
         path = self.data_dir / name
         start_wall = time.time()
@@ -544,7 +560,7 @@ class ScriptedDemo(Node):
                                             [o for o in after['objects'] if o.get('xyz')], self.p('target_radius'))
                 checks['place'] = {'ok': ok, 'reason': reason}
         success = all(c['ok'] for c in checks.values())
-        self.note_outcome(cube, success)
+        self.note_outcome(cube, success, target['id'])
 
         meta = E.build_metadata(
             task=prompt, success=success, index=index, start_time=start_wall, duration_s=duration, topics=self.topics,
@@ -565,7 +581,7 @@ class ScriptedDemo(Node):
         print(f'  💾  {name} saved: {verdict}' + (f' [{detail}]' if detail else ''))
         return 'saved'
 
-    def trial(self, plan, cube, target_xy):
+    def trial(self, plan, cube, target_xy, target_id):
         """The same motion and checks without recording (first runs on the real arm, tuning grasp_closed_threshold)."""
         grasp_m, _ = self.run_plan(plan)
         held = self.holding(grasp_m)
@@ -576,7 +592,7 @@ class ScriptedDemo(Node):
               f'-> {"holding" if held else "nothing held"} (threshold {self.p("grasp_closed_threshold")}); '
               f'place: {"ok" if place[0] else "failed"} ({place[1]})')
         self.session['trials'] += 1
-        self.note_outcome(cube, (held or not self.p('check_grasp')) and (place[0] or not self.p('check_place')))
+        self.note_outcome(cube, (held or not self.p('check_grasp')) and (place[0] or not self.p('check_place')), target_id)
         return 'trial'
 
     def print_summary(self):

@@ -2,9 +2,9 @@
 #
 # Camera (with aligned depth) + object_detector for the pick-and-place pipeline test, one command instead of two terminals:
 #   ros2 launch custom_package pick_place_test.launch.py
-#   ros2 launch custom_package pick_place_test.launch.py model_path:=/workspace/models/yolo_cubes.pt marker_id:=20
-# The detector names tag <marker_id> "marker" (the word used in the test prompt). Start the arm launch and scripted_demo
-# separately (they read the keyboard): docs/finetuning_procedure.md, section 6.
+#   ros2 launch custom_package pick_place_test.launch.py targets:="19:blue marker,25:green marker"     # the defaults
+# targets = comma-separated "<AprilTag id>:<name>"; the names are what config/pick_place_test.yaml's color_targets refers to.
+# Start the arm launch and scripted_demo separately (they read the keyboard): docs/finetuning_procedure.md, section 6.
 #
 
 import os
@@ -25,7 +25,7 @@ def detector(context):
         package='custom_package', executable='object_detector', name='object_detector', output='screen', emulate_tty=True,
         parameters=[os.path.join(share, 'config', 'object_detector.yaml'), {
             'model_path': LaunchConfiguration('model_path').perform(context),
-            'target_tags': [f"{LaunchConfiguration('marker_id').perform(context)}:marker"],
+            'target_tags': [t.strip() for t in LaunchConfiguration('targets').perform(context).split(',') if t.strip()],
         }],
     )]
 
@@ -34,7 +34,8 @@ def generate_launch_description():
     share = get_package_share_directory('custom_package')
     return LaunchDescription([
         DeclareLaunchArgument('model_path', default_value='/workspace/models/yolo_cubes.pt'),
-        DeclareLaunchArgument('marker_id', default_value='20', description='AprilTag id objects are placed on'),
+        DeclareLaunchArgument('targets', default_value='19:blue marker,25:green marker',
+                              description='comma-separated "<AprilTag id>:<name>" target tags'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(share, 'launch', 'camera_front.launch.py')),
             launch_arguments={'depth': 'true'}.items(),
