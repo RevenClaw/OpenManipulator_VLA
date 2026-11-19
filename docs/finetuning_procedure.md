@@ -192,7 +192,7 @@ z error is large, the arm did not arrive (lag, joint 2 load).
 
 **Step E: grasp threshold 🔧.** Each run prints the gripper position after closing and both checks:
 ```
-🧪  trial (not recorded): gripper after closing 0.0042 m -> holding (threshold 0.016); place: ok (cube no longer visible ...)
+🧪  trial (not recorded): gripper after closing 0.0042 m -> holding (threshold -0.007); place: ok (cube no longer visible ...)
 ```
 Close the gripper once on nothing and once on an object (`joint_commander`), note the two `gripper_left_joint` values, and put
 `grasp_closed_threshold` between them.
@@ -294,7 +294,7 @@ Evaluate the 5k/10k/15k checkpoints early (`IMPLEMENTATION_PLAN.md` T6.3).
 | `no target (AprilTag) visible` | tag covered, too small, or not in `target_tags` |
 | `no reachable cube` | cubes outside `workspace_x/y` or out of reach; it pauses: move them closer, ENTER |
 | grasps miss by a constant offset | calibration (§4), `table_z`, `cube_size`/`object_size` |
-| every trial says "nothing held" | `grasp_closed_threshold` too low: it must lie between the closed-on-nothing value (0.019) and the value with an object held |
+| every trial says "nothing held" | `grasp_closed_threshold` too high: it must lie between the closed-on-nothing value (−0.010) and the value with an object held |
 | place check fails although the cube is in the bin | `target_radius` too small, or `target_xy_offset` wrong |
 | `/joint_states: 0.5 s gap` → episode deleted | load spike on the PC; if frequent: `storage_preset: "none"`, close other programs |
 | joint2 overload (`0x20`) | lower `max_joint_vel` (shoulder value first); report it |

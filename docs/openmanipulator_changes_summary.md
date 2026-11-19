@@ -79,8 +79,9 @@ This document provides a complete, itemized technical record of all modification
      `remember_targets` and `place_offsets` (+ `demo_planning.place_offset`), so objects can be placed ON a tag.
    * `scripted_demo until_clear` (on in the test config): counts the objects, retries failed picks (cap `max_attempts_per_object` per
      object and objects × that in total), stops by itself; `run_plan`/`back_out` abort a failed grasp (lift, open, READY).
-   * Gripper polarity (2026-11-19, known issue #15): this arm's gripper is inverted w.r.t. ROBOTIS's convention, so open/close
-     are swapped in `joint_commander`, `vla_safety`, `vla_layer` constants and both MoveIt SRDFs (named states `open`/`close`).
+   * Gripper polarity (2026-11-19, known issue #15): this arm's gripper is inverted w.r.t. ROBOTIS's convention. Fixed in the real-hardware driver
+     config: servo 15's `[unit info]` in `open_manipulator_x_position.ros2_control.xacro` is mirrored (factor negated, offset 0.045099321), so
+     everything above the driver (and mock hardware) keeps the stock +0.019 open / −0.010 close.
    * `docker/install_vla_deps.sh` (openpi-client + CPU PyTorch + ultralytics 8.3.40 + OpenCV 4.10, numpy < 2) and the same pins in
      the Dockerfile. `package.xml`: `python3-yaml`, `python3-opencv`.
 

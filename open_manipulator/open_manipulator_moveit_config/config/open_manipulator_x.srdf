@@ -24,10 +24,10 @@
         <joint name="joint4" value="-0.0154"/>
     </group_state>
     <group_state name="open" group="gripper">
-        <joint name="gripper_left_joint" value="-0.01"/>
+        <joint name="gripper_left_joint" value="0.019"/>
     </group_state>
     <group_state name="close" group="gripper">
-        <joint name="gripper_left_joint" value="0.019"/>
+        <joint name="gripper_left_joint" value="-0.01"/>
     </group_state>
     <end_effector name="end_effector" parent_link="end_effector_link" group="arm"/>
     <disable_collisions link1="gripper_left_link" link2="gripper_right_link" reason="Never"/>

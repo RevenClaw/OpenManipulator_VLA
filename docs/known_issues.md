@@ -212,24 +212,29 @@ deferred. All paths are relative to `open_manipulator/`.
   READY) instead of carrying nothing. Tested in simulation with a scripted world: fail → retry → 2 of 2 placed in 3 attempts, and
   an always-failing grasp stopped at objects × 2 attempts. Not yet run on the real arm.
 
-## 15. Gripper open/close inverted on the real arm  *(🔧 fixed 2026-11-19, not yet tested on hardware)*
+## 15. Gripper open/close inverted on the real arm  *(🔧 fixed 2026-11-19 in the driver config, not yet tested on hardware)*
 
 * **Symptom:** commands that should open the gripper closed it and vice versa (seen with the scripted pick-and-place test).
 * **Cause:** this unit's gripper is physically inverted w.r.t. ROBOTIS's stock convention (+0.019 m open). Every tool followed the stock
-  convention, so every tool was inverted together. (The gripper servo ID 15 runs with `Drive Mode 5`, reversed, plus its own offset and
-  unit conversion; the other servos use `4`.)
-* **Fix:** `GRIPPER_OPEN_M = −0.010`, `GRIPPER_CLOSE_M = +0.019` in `joint_commander.py` (also used by `ee_commander`, `scripted_demo`,
-  `record_episodes`), `vla_safety.py` (the bridge) and `vla_layer/omx_pi05/constants.py`. The model's convention is unchanged (0 = open,
-  1 = closed): the same formula now maps −0.010 → 0 and 0.019 → 1. `scripted_demo`'s "is something in the gripper" check is
-  polarity-aware (`demo_planning.gripper_holding`) and `grasp_closed_threshold` defaults to 0.016 (was −0.007, its mirror image).
-* **Check on the arm:** `joint_commander` → `0 -14.6 -8.7 93.3 1` must OPEN the gripper, `… 0` must CLOSE it. If it is still inverted
-  there, swap the two values back in all copies (tests/test_constants_match_robot.py compares `joint_commander` with `vla_layer`).
-* **MoveIt named gripper states swapped too (2026-11-19):** `open` = −0.01 and `close` = 0.019 in both SRDFs (`config/open_manipulator_x.srdf`,
-  `config/open_manipulator_x/open_manipulator_x.srdf`). `home`/`init` are arm-only states and never touch the gripper. Needs a rebuild of
-  `open_manipulator_moveit_config` (`colcon build --symlink-install --packages-select open_manipulator_moveit_config`) and a MoveIt restart.
-* **Side effects:** RViz draws the gripper model the other way round (it follows the URDF's +0.019 = open). ROBOTIS's own keyboard
-  teleop (`open_manipulator_x_teleop`, keys `o`/`p`) is upstream code and now runs inverted on this arm. Any data recorded or checkpoint
-  trained before 2026-11-19 used the old polarity (none of real data existed yet; the synthetic debug checkpoint is unaffected).
+  convention, so every tool was inverted together. The reason for the physical inversion is not known (the gripper servo ID 15 runs the
+  stock `Drive Mode 5`, reversed, plus its own offset; the other servos use `4`).
+* **Fix (final, 2026-11-19):** mirror the gripper's position conversion at the lowest level that is ours to edit, the servo's `[unit info]` in
+  `open_manipulator_description/ros2_control/open_manipulator_x_position.ros2_control.xacro` (gpio `dxl5`). The driver converts
+  `metres = ticks × factor + offset` for Present Position and Goal Position alike, so one change flips commands and feedback together.
+  Stock: factor +1.7626621790e-5, offset −0.036099321. Now: factor −1.7626621790e-5, offset +0.045099321 (= 0.009 + 0.036099321, a
+  mirror about the middle of open and close: new = 0.009 − old). Everything above the driver therefore keeps ROBOTIS's stock convention
+  (+0.019 open, −0.010 close): `/joint_states`, the URDF, RViz, MoveIt, ROBOTIS's teleop, `joint_commander`, `vla_safety`, `vla_layer`, the
+  SRDF named states. Only the real `DynamixelHardware` plugin reads this block; **mock hardware ignores it** (it echoes commands, no mirror).
+  Checked against the driver source (`dynamixel_info.hpp`), the new `open` lands on the raw tick that the interim software swap used.
+* **Before this (same day):** a software swap of open/close in all our code (open −0.010 / close +0.019). It was reverted when the driver
+  mirror replaced it, including the SRDF states and `grasp_closed_threshold` (back to −0.007). **Bags recorded with the swap in place hold
+  the gripper as −0.010 = open in `/joint_states` and would be converted the wrong way round: re-record them.**
+* **Check on the real arm (first, with the gripper empty):** launch the arm, then `joint_commander` → `0 -14.6 -8.7 93.3 1` must OPEN the
+  gripper and `… 0` must CLOSE it, and `ros2 topic echo /joint_states` must show `gripper_left_joint` ≈ +0.019 when open, ≈ −0.010 when
+  closed (or higher than that when stopped on an object). RViz must now draw the gripper like the hardware. If the gripper moves the wrong
+  way or to an extreme, restore the stock factor/offset in the xacro and tell me.
+* **MoveIt:** the SRDF `open`/`close` states are back to the stock +0.019 / −0.01 (rebuild `open_manipulator_moveit_config` if it was built
+  with the swapped values).
 
 * **Gripper stops above the table (2026-11-19, #14 follow-up):** the grasp height is `table_z + cube_size/2` from the config; the camera and its
   calibration only supply x and y. The robot's z = 0 is the origin of `link1`, not necessarily the table: the base plate mesh spans

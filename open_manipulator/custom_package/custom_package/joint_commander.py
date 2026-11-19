@@ -41,12 +41,12 @@ JOINT_LIMITS = {
     'joint4': (-1.7,            1.97),            # -97.40° to +112.87°
 }
 
-# Gripper polarity of THIS arm (found 2026-11-19): gripper_left_joint = -0.010 m OPENS the gripper and +0.019 m CLOSES it, the
-# opposite of ROBOTIS's stock convention (+0.019 open; their teleop keys o/p are therefore swapped on this arm). Every copy of these
-# two values must agree: vla_safety.py, ../../vla_layer/omx_pi05/constants.py (tests/test_constants_match_robot.py checks it).
-# If the physical direction ever changes (e.g. after re-homing the gripper servo), swap the two values in all of them.
-GRIPPER_OPEN_M  = -0.010   # m  commanded "open"
-GRIPPER_CLOSE_M =  0.019   # m  commanded "close" (upper limit of gripper_left_joint = 0.020)
+# ROBOTIS's stock convention: +0.019 m open, -0.010 m close. This arm's gripper is physically inverted; that is corrected in the driver
+# (the mirrored [unit info] of servo 15 in open_manipulator_x_position.ros2_control.xacro, known issue #15), so every ROS-level number,
+# including /joint_states, follows the stock convention. Every copy of these two values must agree: vla_safety.py,
+# ../../vla_layer/omx_pi05/constants.py (tests/test_constants_match_robot.py checks it).
+GRIPPER_OPEN_M  =  0.019   # m  (upper limit of gripper_left_joint = 0.020)
+GRIPPER_CLOSE_M = -0.010   # m  (matches initial_value in ros2_control.xacro)
 
 MOVE_DURATION_SEC = 4.0    # seconds for joint trajectory execution
 GRIPPER_MAX_EFFORT = 1.0   # same as ee_commander / vla_bridge

@@ -120,7 +120,7 @@ class ScriptedDemo(Node):
         dp('correction_prob', 0.1)
         # checks
         dp('check_grasp', True)                                 # False on mock hardware (the gripper always closes fully)
-        dp('grasp_closed_threshold', 0.016)                     # m; between the fully closed end (0.019) and the holding position
+        dp('grasp_closed_threshold', -0.007)                    # m; at or below = closed on nothing (closed end = -0.010)
         dp('check_place', True)
         dp('target_radius', 0.06)
         dp('gripper_max_effort', 1.0)

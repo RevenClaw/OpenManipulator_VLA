@@ -46,6 +46,6 @@ scripted_demo:
     # Checks. The grasp check needs grasp_closed_threshold (measure: close the gripper on nothing and on an object, read
     # gripper_left_joint, put the threshold between the two). Mock hardware always closes fully: set check_grasp false there.
     check_grasp: true
-    grasp_closed_threshold: 0.016
+    grasp_closed_threshold: -0.007
     check_place: true
     gripper_max_effort: 1.0

@@ -175,12 +175,28 @@
         <param name="Drive Mode">5</param>
         <param name="Return Delay Time">0</param>
         <param name="Goal Current">200</param>
-        <param name="[unit info]">
-          Present Position,0.000017626621790,m,signed,-0.036099321;
-          Goal Position,0.000017626621790,m,signed,-0.036099321;
-          Present Velocity,0.000275558153557,rad/s,signed,0.0;
-          Goal Velocity,0.000275558153557,rad/s,signed,0.0;
-        </param>
+        <!-- Gripper polarity of THIS arm is the opposite of ROBOTIS's stock one, so the position conversion is MIRRORED here:
+             metres = ticks * factor + offset (driver: DynamixelInfo::ConvertValueToUnit), applied to Present Position AND Goal
+             Position alike. Stock: factor +1.7626621790e-5, offset -0.036099321. Mirror about the middle of open (+0.019) and close
+             (-0.010): new = 0.009 - old, i.e. factor negated and offset = 0.009 + 0.036099321 = 0.045099321. Everything above the driver
+             (URDF, RViz, MoveIt, our code, /joint_states) then keeps ROBOTIS's convention (+0.019 open, -0.010 close). Only read by the
+             real DynamixelHardware plugin: mock hardware ignores it. To undo: restore the stock factor and offset. Known issue #15. -->
+        <xacro:if value="${use_mock_hardware}">  <!-- mock hardware: no mirror (and mock_components ignores this block anyway) -->
+          <param name="[unit info]">
+            Present Position,0.000017626621790,m,signed,-0.036099321;
+            Goal Position,0.000017626621790,m,signed,-0.036099321;
+            Present Velocity,0.000275558153557,rad/s,signed,0.0;
+            Goal Velocity,0.000275558153557,rad/s,signed,0.0;
+          </param>
+        </xacro:if>
+        <xacro:unless value="${use_mock_hardware}">
+          <param name="[unit info]">
+            Present Position,-0.000017626621790,m,signed,0.045099321;
+            Goal Position,-0.000017626621790,m,signed,0.045099321;
+            Present Velocity,0.000275558153557,rad/s,signed,0.0;
+            Goal Velocity,0.000275558153557,rad/s,signed,0.0;
+          </param>
+        </xacro:unless>
       </gpio>
 
     </ros2_control>

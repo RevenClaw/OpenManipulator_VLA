@@ -139,7 +139,7 @@ Useful variations (add to the `scripted_demo` command):
 -p max_attempts_per_object:=5              # more (or fewer) retries per object before giving up on it
 -p "max_joint_vel:=[0.5, 0.3, 0.6, 0.8]"   # faster (j1..j4 rad/s; default in the test config: [0.3, 0.2, 0.4, 0.5])
 -p table_z:=0.012 -p cube_size:=0.03       # scene values: table height in the robot frame, object edge (m)
--p grasp_closed_threshold:=0.014           # gripper position (m) at or above which "nothing is held" (closed end = 0.019)
+-p grasp_closed_threshold:=-0.005          # gripper position (m) at or below which "nothing is held" (closed end = -0.010)
 -p "colors:=['blue']"                      # pick only blue objects (green ones are then left alone)
 -p seed:=1                                 # same choices every run
 ```
