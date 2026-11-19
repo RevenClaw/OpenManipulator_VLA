@@ -224,6 +224,9 @@ deferred. All paths are relative to `open_manipulator/`.
   polarity-aware (`demo_planning.gripper_holding`) and `grasp_closed_threshold` defaults to 0.016 (was −0.007, its mirror image).
 * **Check on the arm:** `joint_commander` → `0 -14.6 -8.7 93.3 1` must OPEN the gripper, `… 0` must CLOSE it. If it is still inverted
   there, swap the two values back in all copies (tests/test_constants_match_robot.py compares `joint_commander` with `vla_layer`).
+* **MoveIt named gripper states swapped too (2026-11-19):** `open` = −0.01 and `close` = 0.019 in both SRDFs (`config/open_manipulator_x.srdf`,
+  `config/open_manipulator_x/open_manipulator_x.srdf`). `home`/`init` are arm-only states and never touch the gripper. Needs a rebuild of
+  `open_manipulator_moveit_config` (`colcon build --symlink-install --packages-select open_manipulator_moveit_config`) and a MoveIt restart.
 * **Side effects:** RViz draws the gripper model the other way round (it follows the URDF's +0.019 = open). ROBOTIS's own keyboard
   teleop (`open_manipulator_x_teleop`, keys `o`/`p`) is upstream code and now runs inverted on this arm. Any data recorded or checkpoint
   trained before 2026-11-19 used the old polarity (none of real data existed yet; the synthetic debug checkpoint is unaffected).
