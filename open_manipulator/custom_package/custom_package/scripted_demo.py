@@ -329,6 +329,8 @@ class ScriptedDemo(Node):
         """(cube, target, plan, variation, prompt) for a random reachable cube, or raises Aborted with the reason."""
         lo_x, hi_x = self.p('workspace_x')
         lo_y, hi_y = self.p('workspace_y')
+        if not det.get('calibrated', True):
+            raise Aborted('the camera is not calibrated (no camera_calibration.yaml): run calibrate_camera first')
         targets = [t for t in det['targets'] if t.get('xyz')]
         if self.p('remember_targets'):
             with self.lock:
@@ -389,6 +391,40 @@ class ScriptedDemo(Node):
         if self.until_clear:
             raise Finished(f'{len(items)} object(s) left but none reachable: {"; ".join(reasons)}')
         raise Aborted(message)
+
+    def print_routing(self):
+        """Startup check of where each colour goes and which target tags the detector actually reports: a mismatch (a stale config,
+        or object_detector started with its default tags) is shown here instead of silently sending objects to the wrong tag."""
+        det = self.fresh_detections(timeout=3.0)
+        seen = {t['name']: t['id'] for t in (det['targets'] if det else [])}
+        with self.lock:
+            for i, t in self.known_targets.items():
+                seen.setdefault(t['name'], i)
+        print('  🗺️  Routing (colour → target tag):')
+        routed = set()
+        for colour in self.colors:
+            name = self.color_targets.get(colour)
+            if name is None:
+                names = ', '.join(f'{i} "{n}"' for n, i in seen.items()) or 'none seen yet'
+                print(f'        {colour:6s} → ANY target tag (picked at random among: {names})')
+                routed.update(seen)
+            elif name in seen:
+                print(f'        {colour:6s} → "{name}"  ✅ tag {seen[name]}')
+                routed.add(name)
+            else:
+                print(f'        {colour:6s} → "{name}"  ⚠️ not reported by the detector (it reports: '
+                      f'{", ".join(f"{i} {n!r}" for n, i in seen.items()) or "no target tags"})')
+        ignored = [c for c in ('red', 'green', 'blue') if c not in self.colors]
+        if ignored:
+            print(f'        {", ".join(ignored)} → ignored (not in `colors`)')
+        extra = [f'{i} "{n}"' for n, i in seen.items() if n not in routed]
+        if extra:
+            print(f'  ⚠️  The detector also reports {", ".join(extra)}: nothing is routed there. If a colour should go to a tag listed '
+                  f'here, the config (`color_targets`) or the detector launch (`targets:=`) is out of date.')
+        if det is None:
+            print('  ⚠️  No detections yet (is object_detector running?).')
+        elif not det.get('calibrated', True):
+            print('  ⚠️  The camera is not calibrated: positions are unusable. Run calibrate_camera first.')
 
     def failures(self, cube):
         """Failed picks so far of this object (same colour, within 5 cm of where it lies now)."""
@@ -500,7 +536,7 @@ class ScriptedDemo(Node):
         index = E.next_episode_index(self.data_dir)
         name = E.episode_name(index)
         print(f'\n  🎯  {name}: "{prompt}"  cube ({cube["xyz"][0]:.3f}, {cube["xyz"][1]:.3f}) -> '
-              f'{target["name"]} ({target_xy[0]:.3f}, {target_xy[1]:.3f}), pitch {np.degrees(plan.pick_pitch):.0f}°, '
+              f'{target["name"]} [tag {target["id"]}] ({target_xy[0]:.3f}, {target_xy[1]:.3f}), pitch {np.degrees(plan.pick_pitch):.0f}°, '
               f'{plan.duration:.1f} s' + ('  [target tag covered: using its last seen position]' if target.get('cached') else ''))
         if self.p('confirm') and not self.confirmed(plan):
             return 'skipped'
@@ -654,6 +690,7 @@ def main(args=None):
     try:
         time.sleep(1.5)  # subscriptions fill
         node.monitor.print_status(node.p('stale_after'))
+        node.print_routing()
         saved = 0
         while not state['quit'] and (target <= 0 or saved < target):
             if state['pause']:

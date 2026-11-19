@@ -240,3 +240,8 @@ deferred. All paths are relative to `open_manipulator/`.
   `config/pick_place_test.yaml`, `targets:=` on the launch). Drop offsets are now counted per tag, and a colour whose tag was never seen
   is skipped with a warning (it was wrongly counted as "already on its target"). Tested in simulation with three colours and two tags:
   2 objects counted, red untouched, a failed green pick retried, 2 of 2 placed in 3 attempts.
+* **Objects all went to tag 20 (2026-11-19):** with the current code and `pick_place_test.launch.py` + `pick_place_test.yaml` the detector reports tag 19
+  as "blue marker" and tag 25 as "green marker" and tag 20 is not a target (checked with the real launch file and the real detector in simulation).
+  Sending everything to tag 20 needs an older config or the wrong files: the recording config `scripted_demo.yaml` (no per-colour targets) or
+  `object_detector` started with its default `20:bin`. `scripted_demo` now prints a `🗺️ Routing` block at startup (colour → target name → tag id, with a
+  warning when the detector's target names don't match the config, or when the camera isn't calibrated), and each plan line shows `[tag N]`.

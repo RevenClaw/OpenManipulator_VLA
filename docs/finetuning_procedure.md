@@ -217,7 +217,8 @@ with different layouts; the final `📊` line gives placed / attempts / failed p
 | Squeezes air ("nothing held") | `cube_size` too small/large, or `grasp_closed_threshold` wrong |
 | Releases high above the table | `release_clearance` / `bin_height` (0.0 for the marker) in the test config |
 | Objects knock each other at the marker | increase the `place_offsets` spacing (default 5 cm) |
-| `no target (AprilTag) visible` | the marker was never seen: put it in view once before starting |
+| `no target (AprilTag) visible` | the target tags were never seen (or the camera is not calibrated: the message then says so): put them in view once before starting |
+| Every object goes to tag 20 (or one tag) instead of blue → 19, green → 25 | A stale or wrong setup. Read the **`🗺️ Routing`** block `scripted_demo` prints at startup: `blue → "blue marker" ✅ tag 19` must appear for both colours. `⚠️ not reported by the detector (it reports: 20 'bin')` = `object_detector` was started with its default config instead of `pick_place_test.launch.py`. `ANY target tag` for every colour = the recording config `scripted_demo.yaml` was used instead of `pick_place_test.yaml`. An old yaml/launch = `git pull` the robot PC and run `colcon build --symlink-install --packages-select custom_package` again, then restart the detector launch AND `scripted_demo`. Each plan line also shows its tag: `-> blue marker [tag 19]`. |
 | Prompt text says "object … marker" | by design: the template is `pick up the {color} object and place it on the {target}` |
 
 ---
