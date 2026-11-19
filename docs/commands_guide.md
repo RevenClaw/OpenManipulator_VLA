@@ -293,6 +293,7 @@ ros2 run custom_package calibrate_camera                                   # onc
 # pipeline test, nothing recorded: pick ANY red/green/blue object, place it ON marker 20 (prints each plan: ENTER = go, s = skip)
 ros2 run custom_package scripted_demo --ros-args --params-file \
     $(ros2 pkg prefix custom_package)/share/custom_package/config/pick_place_test.yaml
+# (all of these commands with their options: docs/custom_commands_guide.md sections 10 and 11)
 ros2 run custom_package scripted_demo --ros-args --params-file \
     $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml -p episodes:=10                 # record
 ```

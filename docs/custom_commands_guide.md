@@ -101,3 +101,57 @@ ros2 service call /vla_bridge/enable std_srvs/srv/SetBool "{data: false}"   # st
 ros2 topic pub --once /vla_bridge/estop std_msgs/msg/Bool "{data: true}"      # stop: latched e-stop
 ```
 In the bridge's own terminal, `s` prints the same status. `last_fault` says why it stopped.
+
+## 10. Pick-and-place pipeline test (YOLO + scripted demo, nothing recorded)
+
+Pick **any** red/green/blue object and place it **on AprilTag 20** ("the marker"). Needs the Zenoh router (§1) and the robot launch (§3,
+homing option 2) first. Once per container start: `bash /root/ros2_ws/src/open_manipulator/docker/install_vla_deps.sh`, with the
+model in `workspace/models/yolo_cubes.pt`. Full procedure with checks and troubleshooting: `docs/finetuning_procedure.md`, section 6.
+
+```bash
+# Camera (with depth) + object_detector, one launch. Leave it running. Tag 20 is named "marker".
+ros2 launch custom_package pick_place_test.launch.py
+ros2 launch custom_package pick_place_test.launch.py model_path:=/workspace/models/yolo_cubes.pt marker_id:=20   # the defaults
+
+# Look at what it sees (RViz: Add → By topic → /object_detector/annotated → Image)
+rviz2
+
+# Camera → robot calibration. Once, and again whenever the camera or the robot base moves. Needs the launch above running.
+# Then put the average tag height it prints into table_z in config/pick_place_test.yaml.
+ros2 run custom_package calibrate_camera
+
+# The test. Prints every plan and waits: ENTER = execute, s = skip (nothing moves), q = quit. Ctrl+C = stop the arm.
+ros2 run custom_package scripted_demo --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/pick_place_test.yaml
+```
+
+Useful variations (add to the `scripted_demo` command):
+```bash
+-p confirm:=false                          # run without asking for each plan (after the first successful runs)
+-p episodes:=5                             # stop after 5 pick-and-places
+-p "max_joint_vel:=[0.5, 0.3, 0.6, 0.8]"   # faster (j1..j4 rad/s; default in the test config: [0.3, 0.2, 0.4, 0.5])
+-p table_z:=0.012 -p cube_size:=0.03       # scene values: table height in the robot frame, object edge (m)
+-p grasp_closed_threshold:=-0.005          # gripper position (m) at or below which "nothing is held"
+-p "colors:=['red']"                       # pick only red objects
+-p seed:=1                                 # same choices every run
+```
+Keys while it runs: `p` pause after this episode, ENTER continue, `q` quit after this episode.
+
+## 11. Scripted demonstrations for fine-tuning (recorded)
+
+Same setup as §10 (calibration done), but every episode is recorded with the commanded action, checked, labelled and saved in
+`/workspace/recordings/scripted_pick_place/episode_NNNN/` (= host `open_manipulator/docker/workspace/recordings/`).
+Only after the pipeline test (§10) passes. Procedure: `docs/finetuning_procedure.md`, sections 7–8.
+
+```bash
+# Pilot: 10 recorded episodes with the template prompt "pick up the {color} cube and place it in the {target}" (bin tag name from object_detector.yaml)
+ros2 run custom_package scripted_demo --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml -p episodes:=10
+
+# Bulk: until you press q (the current episode finishes first)
+ros2 run custom_package scripted_demo --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml -p episodes:=0
+
+# Check what was recorded
+ros2 run custom_package check_episode /workspace/recordings/scripted_pick_place
+```
