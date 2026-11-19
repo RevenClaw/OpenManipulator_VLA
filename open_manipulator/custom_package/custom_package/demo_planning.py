@@ -277,6 +277,13 @@ def fingertip_heights(plan):
 
 
 # --------------------------------------------------------------------------------------------- tasks and checks
+def place_offset(offsets, index):
+    """Drop-point offset (dx, dy) in m for the index-th placement, cycling through the flat list [dx0, dy0, dx1, dy1, ...].
+    Lets several objects be set down around one marker without landing on each other. [0, 0] = always the marker centre."""
+    pairs = [(float(offsets[i]), float(offsets[i + 1])) for i in range(0, len(offsets) - 1, 2)] or [(0.0, 0.0)]
+    return pairs[index % len(pairs)]
+
+
 def make_prompt(template, color, target):
     return template.format(color=color, target=target)
 

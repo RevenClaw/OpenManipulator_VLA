@@ -74,6 +74,8 @@ This document provides a complete, itemized technical record of all modification
      (`start_pose`). Starting episodes from the folded HOME doubled their length (~65 s → ~27 s median).
    * `vla_bridge`: optional `max_joint_vel_per_joint` (per-joint speed caps; default unchanged: 0.3 for all joints).
    * `camera_front.launch.py`: `depth:=true` adds depth aligned to color (`depth_profile`).
+   * Pipeline test (2026-11-19): `config/pick_place_test.yaml` + `launch/pick_place_test.launch.py`; `scripted_demo` got `confirm`,
+     `remember_targets` and `place_offsets` (+ `demo_planning.place_offset`), so objects can be placed ON a tag.
    * `docker/install_vla_deps.sh` (openpi-client + CPU PyTorch + ultralytics 8.3.40 + OpenCV 4.10, numpy < 2) and the same pins in
      the Dockerfile. `package.xml`: `python3-yaml`, `python3-opencv`.
 

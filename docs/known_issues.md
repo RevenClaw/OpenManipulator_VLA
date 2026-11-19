@@ -202,3 +202,8 @@ deferred. All paths are relative to `open_manipulator/`.
   `grasp_closed_threshold`, the real arm's tracking lag, joint2 load at the demo speeds, CPU load of YOLO + recording on the robot
   PC, and Zenoh instead of Fast DDS. No wrist camera: `vla_layer` masks the wrist view by default since 2026-11-13
   (`wrist_camera=False`); the bridge still sends a black wrist frame, which is ignored.
+* **Pipeline test added 2026-11-19** (`config/pick_place_test.yaml`, `launch/pick_place_test.launch.py`, procedure §6): picks any
+  object YOLO labels red/green/blue and places it ON tag 20 (flat release: `bin_height 0`), `confirm` mode (print each plan, ENTER /
+  `s` / `q`), `remember_targets` (the placed object covers the tag; its last seen position is kept) and `place_offsets` (the next
+  object lands 5 cm from the previous one). Tested in simulation: the target stayed known after its tag disappeared, offsets
+  cycled (x 0.14 → 0.19 → 0.09), skipping a plan moved nothing. Not yet run on the real arm.

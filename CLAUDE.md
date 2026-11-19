@@ -39,7 +39,7 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
   - Scripted demonstrations for fine-tuning (issue #14; procedure: `docs/finetuning_procedure.md`):
     `object_detector.py` (YOLO cubes + AprilTag targets from the ROS color + aligned-depth topics → world-frame positions in m,
     `~/detections` JSON, `~/annotated` image), `calibrate_camera.py` (touch tags → Kabsch camera→world, `/workspace/calibration/`),
-    `scripted_demo.py` (task → plan → execute → `/teleop/action` → record → checks → metadata; `record:=false` = trials),
+    `scripted_demo.py` (task → plan → execute → `/teleop/action` → record → checks → metadata; `record:=false` = trials; `config/pick_place_test.yaml` = the pipeline test: any object → marker tag 20, `confirm` shows each plan first),
     pure modules `perception_tools.py` and `demo_planning.py` (unit-tested). YOLO model: `/workspace/models/yolo_cubes.pt`.
   - **READY** = `episode_tools.READY` `[0.0, -0.2547, -0.1520, 1.6284]` (gripper 70° down at (0.16, 0, 0.12) m): start pose of every
     demo and policy run. HOME (folded, gripper horizontal) is only the session/storage pose.

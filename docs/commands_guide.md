@@ -288,11 +288,11 @@ Automatic pick-and-place demos recorded in the same format: camera with depth, `
 `calibrate_camera` (once), then `scripted_demo`. **The full step-by-step procedure (setup, calibration, trials, pilot, bulk
 recording, conversion, training, running the policy) is in `docs/finetuning_procedure.md`.** Short form:
 ```bash
-ros2 launch custom_package camera_front.launch.py depth:=true
-ros2 run custom_package object_detector --ros-args --params-file $(ros2 pkg prefix custom_package)/share/custom_package/config/object_detector.yaml
+ros2 launch custom_package pick_place_test.launch.py                       # camera (depth) + object_detector; tag 20 = "marker"
 ros2 run custom_package calibrate_camera                                   # once (and whenever the camera moves)
+# pipeline test, nothing recorded: pick ANY red/green/blue object, place it ON marker 20 (prints each plan: ENTER = go, s = skip)
 ros2 run custom_package scripted_demo --ros-args --params-file \
-    $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml -p record:=false -p episodes:=3   # trials
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/pick_place_test.yaml
 ros2 run custom_package scripted_demo --ros-args --params-file \
     $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml -p episodes:=10                 # record
 ```

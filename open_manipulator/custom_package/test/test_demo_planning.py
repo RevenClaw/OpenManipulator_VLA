@@ -116,3 +116,16 @@ def test_episode_length_is_reasonable():
     durations = [D.plan_pick_place((rng.uniform(0.12, 0.24), rng.uniform(-0.05, 0.15)), (0.12, -0.18), CFG,
                                    D.sample_variation(rng)).duration for _ in range(20)]
     assert np.median(durations) < 32.0  # ~27 s: per-joint caps + READY start (was ~65 s from HOME at 0.3 rad/s everywhere)
+
+
+def test_place_offsets_cycle():
+    offsets = [0.0, 0.0, 0.05, 0.0, -0.05, 0.0]
+    assert [D.place_offset(offsets, i) for i in range(4)] == [(0.0, 0.0), (0.05, 0.0), (-0.05, 0.0), (0.0, 0.0)]
+    assert D.place_offset([], 3) == (0.0, 0.0) and D.place_offset([0.01], 0) == (0.0, 0.0)  # empty or odd lists: no offset
+
+
+def test_placing_on_a_flat_marker_releases_just_above_the_table():
+    cfg = D.PlanConfig(bin_height=0.0, release_clearance=0.025)
+    plan = D.plan_pick_place((0.2, 0.05), (0.14, -0.1), cfg)
+    lowest = min(forward_kinematics(q)[2] for q in next(s for s in plan.segments if s.name == 'lower').joints)
+    assert abs(lowest - 0.025) < 0.002 and abs(plan.waypoints['release'][2] - 0.025) < 1e-9

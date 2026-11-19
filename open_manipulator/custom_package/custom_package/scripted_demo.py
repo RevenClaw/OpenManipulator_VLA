@@ -25,6 +25,7 @@
 
 import json
 import pathlib
+import queue
 import shutil
 import threading
 import time
@@ -104,6 +105,9 @@ class ScriptedDemo(Node):
         dp('max_pitch_deg', 90.0)
         dp('min_pitch_deg', 30.0)
         dp('target_xy_offset', [0.0, 0.0])                      # m from the target tag to the drop point
+        dp('place_offsets', [0.0, 0.0])                         # [dx0, dy0, dx1, dy1, ...] extra drop offsets, one per placement, cycling
+        dp('remember_targets', True)                            # a tag covered by a placed object keeps its last seen position
+        dp('confirm', False)                                    # print each plan and wait: ENTER = execute, s = skip, q = quit
         dp('workspace_x', [0.08, 0.32])                         # m, cubes outside are ignored
         dp('workspace_y', [-0.25, 0.25])
         dp('variation', True)
@@ -123,6 +127,10 @@ class ScriptedDemo(Node):
         self.colors = list(p('colors'))
         self.color_targets = dict(s.split(':', 1) for s in p('color_targets') if ':' in s)
         self.target_offset = np.array(p('target_xy_offset'), float)
+        self.known_targets = {}       # tag id -> last detected target (a placed object can cover its tag)
+        self.attempts = 0             # episodes actually executed (selects the next place_offsets entry)
+        self.answers = queue.Queue()  # keyboard lines, while a plan waits for confirmation
+        self.awaiting = False
         self.cfg = D.PlanConfig(table_z=p('table_z'), cube_size=p('cube_size'), bin_height=p('bin_height'),
                                 release_clearance=p('release_clearance'), max_joint_vel=tuple(p('max_joint_vel')),
                                 max_pitch_deg=p('max_pitch_deg'), min_pitch_deg=p('min_pitch_deg'), rate_hz=p('action_rate'))
@@ -148,6 +156,7 @@ class ScriptedDemo(Node):
         self.cmd_g = 0.0              # commanded gripper, 0 open .. 1 closed
         self.active = None            # (times, joints, t0) of the trajectory being executed
         self.abort = threading.Event()
+        self.quit_requested = False
         self.recording_path = None    # episode being recorded (deleted if interrupted)
         self.session = {'success': 0, 'failure': 0, 'deleted': 0, 'skipped': 0, 'seconds': 0.0, 'trials': 0}
 
@@ -172,9 +181,13 @@ class ScriptedDemo(Node):
                     self.cmd_q = self.joints.copy()
 
     def detections_callback(self, msg):
+        data = json.loads(msg.data)
         with self.lock:
-            self.detections = json.loads(msg.data)
+            self.detections = data
             self.detections_time = time.monotonic()
+            for t in data.get('targets', []):
+                if t.get('xyz'):
+                    self.known_targets[t['id']] = t
 
     def current_joints(self):
         with self.lock:
@@ -304,6 +317,10 @@ class ScriptedDemo(Node):
         lo_x, hi_x = self.p('workspace_x')
         lo_y, hi_y = self.p('workspace_y')
         targets = [t for t in det['targets'] if t.get('xyz')]
+        if self.p('remember_targets'):
+            with self.lock:
+                cached = [dict(t, cached=True) for i, t in self.known_targets.items() if i not in {x['id'] for x in targets}]
+            targets += cached
         if not targets:
             raise Aborted('no target (AprilTag) visible')
         cubes = [o for o in det['objects'] if o['label'] in self.colors and o.get('xyz')
@@ -320,7 +337,7 @@ class ScriptedDemo(Node):
                 continue
             target = options[int(self.rng.integers(len(options)))]
             var = D.sample_variation(self.rng, bool(self.p('variation')), float(self.p('correction_prob')))
-            target_xy = np.array(target['xyz'][:2]) + self.target_offset
+            target_xy = np.array(target['xyz'][:2]) + self.target_offset + D.place_offset(self.p('place_offsets'), self.attempts)
             try:
                 plan = D.plan_pick_place(cube['xyz'][:2], target_xy, self.cfg, var)
             except D.PlanningError as e:
@@ -328,6 +345,32 @@ class ScriptedDemo(Node):
                 continue
             return cube, target, target_xy, plan, var, D.make_prompt(self.template, cube['label'], target['name'])
         raise Aborted('no reachable cube' + (f' ({"; ".join(reasons)})' if reasons else f' among {len(cubes)} detected'))
+
+    def confirmed(self, plan):
+        """Prints the plan's waypoints and waits for the operator: ENTER = execute, s = skip (nothing moves), q = quit."""
+        for name, w in plan.waypoints.items():
+            print(f'        {name:13s} x {w[0]:.3f}  y {w[1]:.3f}  z {w[2]:.3f}  pitch {np.degrees(w[3]):.0f}°')
+        print('  ❓  ENTER = execute this plan, s = skip it (nothing moves), q = quit')
+        while not self.answers.empty():
+            self.answers.get_nowait()
+        self.awaiting = True
+        try:
+            while True:
+                try:
+                    answer = self.answers.get(timeout=0.2)
+                except queue.Empty:
+                    if self.abort.is_set():
+                        raise Aborted('aborted')
+                    continue
+                if answer == 'q':
+                    self.quit_requested = True
+                    return False
+                if answer in ('', 'y'):
+                    return True
+                if answer == 's':
+                    return False
+        finally:
+            self.awaiting = False
 
     def preflight(self):
         problems = self.monitor.problems(self.p('stale_after'))
@@ -348,7 +391,10 @@ class ScriptedDemo(Node):
         name = E.episode_name(index)
         print(f'\n  🎯  {name}: "{prompt}"  cube ({cube["xyz"][0]:.3f}, {cube["xyz"][1]:.3f}) -> '
               f'{target["name"]} ({target_xy[0]:.3f}, {target_xy[1]:.3f}), pitch {np.degrees(plan.pick_pitch):.0f}°, '
-              f'{plan.duration:.1f} s')
+              f'{plan.duration:.1f} s' + ('  [target tag covered: using its last seen position]' if target.get('cached') else ''))
+        if self.p('confirm') and not self.confirmed(plan):
+            return 'skipped'
+        self.attempts += 1
 
         self.gripper(0.0, 0.3)
         self.move_to(plan.start)
@@ -461,8 +507,9 @@ class ScriptedDemo(Node):
               f'{s["seconds"] / 60:.1f} min recorded -> {self.data_dir}')
 
 
-def keyboard(state):
-    """p = pause after this episode, ENTER = continue, q = quit after this episode."""
+def keyboard(state, node):
+    """p = pause after this episode, ENTER = continue, q = quit after this episode. While a plan waits for confirmation
+    (confirm:=true) the lines go to it instead."""
     while not state['quit']:
         try:
             line = input().strip().lower()
@@ -471,6 +518,9 @@ def keyboard(state):
         except KeyboardInterrupt:
             state['quit'] = True
             break
+        if node.awaiting:
+            node.answers.put(line)
+            continue
         if line == 'q':
             state['quit'] = True
         elif line == 'p':
@@ -498,7 +548,7 @@ def main(args=None):
     print('  p = pause after this episode, ENTER = continue, q = quit after this episode, Ctrl+C = abort now')
     print('=' * 66)
     state = {'quit': False, 'pause': False, 'event': threading.Event()}
-    threading.Thread(target=keyboard, args=(state,), daemon=True).start()
+    threading.Thread(target=keyboard, args=(state, node), daemon=True).start()
     target = int(node.p('episodes'))
     try:
         time.sleep(1.5)  # subscriptions fill
@@ -514,6 +564,8 @@ def main(args=None):
             try:
                 if node.run_episode() in ('saved', 'trial'):
                     saved += 1
+                if node.quit_requested:
+                    state['quit'] = True
             except Aborted as e:
                 node.session['skipped'] += 1
                 print(f'  ⚠️  {e}')

@@ -125,24 +125,79 @@ ros2 run custom_package calibrate_camera
 
 ---
 
-## 6. Trial runs on the real arm (no recording)
-Hand near the power switch. The first runs at reduced speed:
+## 6. Pipeline test: pick any coloured object, place it on marker 20 (no recording)
+Do this **before** recording anything: it proves detection, calibration, grasping and the motion work together. The test
+config `config/pick_place_test.yaml` picks any object YOLO labels red, green or blue, in random order, and places it **on
+AprilTag 20, "the marker"** (not in a bin), lowering the fingertips to just above the table and letting go. Nothing is recorded.
+
+**What you need on the table:** the marker (tag 20, flat on the table, 12–25 cm from the base, away from where objects lie,
+at least 8 cm from every object) and 1–3 small coloured objects about the size of the cubes (`cube_size`, default 2.5 cm).
+No other coloured things in view (YOLO only knows red, green and blue and forces anything else into one of them).
+
+**Terminals** (each: `source /root/ros2_ws/install/setup.bash`; the container needs `install_vla_deps.sh` and the YOLO model
+from §1 first):
+```bash
+# T0
+zenohd
+# T1: arm, homing menu option 2 (HOME). scripted_demo itself moves the arm from HOME to READY before each pick.
+ros2 launch custom_package open_manipulator_x_interactive.launch.py port_name:=/dev/ttyUSB0
+# T2: camera with depth + object_detector in one launch (the detector names tag 20 "marker")
+ros2 launch custom_package pick_place_test.launch.py
+# T3 (optional): rviz2, Add → By topic → /object_detector/annotated → Image, and /object_detector/markers → MarkerArray
+rviz2
+```
+
+**Step A: look, nothing moves (§3).** Every object must have a box with the right colour in `/object_detector/annotated`,
+and the marker must be labelled `marker`.
+
+**Step B: calibrate (§4, once).** `ros2 run custom_package calibrate_camera`, then put the average tag height it prints into
+`table_z` in `config/pick_place_test.yaml`. Check: an object's marker in RViz sits on the object (±1 cm of a ruler).
+
+**Step C: read the plans, nothing moves.** The test config has `confirm: true`: every plan is printed first and waits.
 ```bash
 ros2 run custom_package scripted_demo --ros-args --params-file \
-    $(ros2 pkg prefix custom_package)/share/custom_package/config/scripted_demo.yaml \
-    -p record:=false -p episodes:=3 -p "max_joint_vel:=[0.3, 0.2, 0.4, 0.5]"
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/pick_place_test.yaml
 ```
-Watch every motion: the arm goes READY → above the cube → down → close → up → over the bin → down → open → up → READY.
-For each trial it prints the gripper position after closing and both checks:
+```
+🎯  episode_0000: "pick up the red object and place it on the marker"  cube (0.200, 0.100) -> marker (0.140, -0.150), pitch 85°, 35.1 s
+        pregrasp      x 0.200  y 0.100  z 0.072  pitch 85°
+        grasp         x 0.200  y 0.100  z 0.013  pitch 85°
+        ...
+        release       x 0.140  y -0.150  z 0.025  pitch 85°
+❓  ENTER = execute this plan, s = skip it (nothing moves), q = quit
+```
+Type **`s`** a few times and compare the numbers with a ruler: `x, y` of the pick must match the object's position, `x, y` of
+the release must match the marker (measured from the robot base, x forward, y left), and the grasp height should be about
+half the object's height. If not, fix calibration, `table_z` or `cube_size` before anything moves.
+
+**Step D: first real motion.** One object on the table, **hand on the power switch**, speed already reduced in the config
+(`max_joint_vel [0.3, 0.2, 0.4, 0.5]`). Press **ENTER** on a plan and watch: the arm goes READY → above the object → down →
+close → up → over the marker → down → open → up → READY. Press **Ctrl+C** at any moment: the arm holds.
+
+**Step E: grasp threshold 🔧.** Each run prints the gripper position after closing and both checks:
 ```
 🧪  trial (not recorded): gripper after closing 0.0042 m -> holding (threshold -0.007); place: ok (cube no longer visible ...)
 ```
-- 🔧 **grasp_closed_threshold:** close the gripper once on nothing and once on a cube (`joint_commander`), note both
-  `gripper_left_joint` values, and set the threshold between them.
-- If the gripper misses the cube consistently in one direction, the calibration is off (redo §4) or `cube_size`/`table_z` is.
-- If it misses in depth only, check `object_size` (the visible face is moved back by half a cube).
-- If joint2 errors (`0x20`) appear, keep the lower speeds and report it.
-- Then run 10 trials at the default speed (`-p episodes:=10`); go on when **≥ 8/10 succeed**.
+Close the gripper once on nothing and once on an object (`joint_commander`), note the two `gripper_left_joint` values, and put
+`grasp_closed_threshold` between them.
+
+**Step F: several objects.** Put 2–3 objects down, keep ENTER-ing through the plans. Each object is placed at the next spot
+around the marker (centre, then ±5 cm in x and y, `place_offsets`) so they do not land on each other; the marker is covered
+by the first object, so the script keeps using its last seen position (it prints `[target tag covered…]`). Objects already
+within 8 cm of the marker are not picked again. When no reachable object is left it pauses: put the objects back, ENTER.
+
+**Pass when ≥ 8 of 10 picks succeed** (object ends up on the marker). Then set `confirm: false` and raise
+`max_joint_vel` towards the default `[0.5, 0.3, 0.6, 0.8]` (shoulder last), watching for joint2 errors (`0x20`).
+
+| Symptom | Likely cause |
+|---|---|
+| Gripper closes beside the object, constant offset | calibration (§4) or `table_z` |
+| Closes in front of/behind the object only | `object_size` in `object_detector.yaml` (the visible face is moved back by half of it) |
+| Squeezes air ("nothing held") | `cube_size` too small/large, or `grasp_closed_threshold` wrong |
+| Releases high above the table | `release_clearance` / `bin_height` (0.0 for the marker) in the test config |
+| Objects knock each other at the marker | increase the `place_offsets` spacing (default 5 cm) |
+| `no target (AprilTag) visible` | the marker was never seen: put it in view once before starting |
+| Prompt text says "object … marker" | by design: the template is `pick up the {color} object and place it on the {target}` |
 
 ---
 

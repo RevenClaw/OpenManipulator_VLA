@@ -1,0 +1,45 @@
+# Pipeline test (before any fine-tuning data is recorded): pick up ANY detected coloured object (YOLO classes red / green /
+# blue) and place it on AprilTag 20, the "marker". Nothing is recorded. Procedure: docs/finetuning_procedure.md, section 6.
+#
+#   ros2 run custom_package scripted_demo --ros-args --params-file \
+#       $(ros2 pkg prefix custom_package)/share/custom_package/config/pick_place_test.yaml
+#
+# Values marked (measure) must match your setup; the rest are safe defaults for a first test.
+scripted_demo:
+  ros__parameters:
+    record: false                     # trial mode: run the motions and the checks, record nothing
+    confirm: true                     # print every plan first: ENTER = execute, s = skip (nothing moves), q = quit
+    episodes: 0                       # 0 = keep going until q
+
+    # What to pick and where to put it
+    colors: ["red", "green", "blue"]  # every class the YOLO model knows; objects are picked in random order
+    color_targets: [""]               # empty: all objects go to the one target tag
+    prompt_template: "pick up the {color} object and place it on the {target}"
+    # Placing ON the marker: the fingertip is lowered to cube_size/2 + release_clearance above the table (bin_height 0),
+    # i.e. the object is released ~1.2 cm above the paper. Each placement lands at the next offset around the tag centre
+    # (flat list of dx, dy in metres), so objects don't land on each other. The tag is covered by the first placed object:
+    # remember_targets keeps using its last seen position.
+    bin_height: 0.0
+    release_clearance: 0.025
+    place_offsets: [0.0, 0.0,  0.05, 0.0,  -0.05, 0.0,  0.0, 0.05,  0.0, -0.05]
+    remember_targets: true
+    target_radius: 0.08               # objects within 8 cm of the marker count as "already placed" and are not picked again
+
+    # Scene (measure)
+    table_z: 0.0                      # m, table surface in the robot frame (the average tag height calibrate_camera printed)
+    cube_size: 0.025                  # m, edge of the objects (object_detector.yaml: object_size)
+    workspace_x: [0.08, 0.30]         # m in front of the base; objects outside are ignored
+    workspace_y: [-0.22, 0.22]
+
+    # Motion: slow first. Raise only after the first successful runs (default [0.5, 0.3, 0.6, 0.8]).
+    max_joint_vel: [0.3, 0.2, 0.4, 0.5]
+    variation: false                  # no random variations in a test: the same situation gives the same motion
+    max_pitch_deg: 90.0
+    min_pitch_deg: 30.0
+
+    # Checks. The grasp check needs grasp_closed_threshold (measure: close the gripper on nothing and on an object, read
+    # gripper_left_joint, put the threshold between the two). Mock hardware always closes fully: set check_grasp false there.
+    check_grasp: true
+    grasp_closed_threshold: -0.007
+    check_place: true
+    gripper_max_effort: 1.0
