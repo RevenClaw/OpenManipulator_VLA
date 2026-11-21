@@ -33,9 +33,9 @@ from custom_package.ee_commander import inverse_kinematics
 @dataclasses.dataclass
 class PlanConfig:
     table_z: float = 0.0              # m, table surface in the world frame (the base stands on it)
-    cube_size: float = 0.025          # m, edge of the cubes
+    cube_size: float = 0.035          # m, edge of the cubes
     bin_height: float = 0.04          # m, rim height of the bins above the table
-    release_clearance: float = 0.03   # m, fingertips above the rim when opening
+    release_clearance: float = 0.015  # m, fingertips above the rim when opening
     # rad/s per joint (j1..j4). joint2 (shoulder) overloads: kept at 0.3. vla_bridge must allow at least these
     # (max_joint_vel_per_joint), or it clips the motions the policy learned.
     max_joint_vel: tuple = (0.5, 0.3, 0.6, 0.8)
@@ -283,6 +283,61 @@ def gripper_holding(measured_m, threshold_m, open_m, close_m):
     if measured_m is None:
         return False
     return (measured_m - threshold_m) * (open_m - close_m) > 0
+
+
+def cube_reachable(cube_xy, cfg=PlanConfig(), approach_height=0.07):
+    """True if the arm can grasp a cube at cube_xy: the grasp point and the points straight above it (approach / lift) have
+    an IK solution at one pitch in min_pitch_deg..max_pitch_deg. The only limit on where cubes may be (no workspace box)."""
+    z = cfg.table_z + cfg.cube_size / 2
+    x, y = cube_xy
+    return choose_pitch([(x, y, z), (x, y, z + approach_height)], cfg) is not None
+
+
+def screen_cubes(objects, colors, table_z, cube_size, tags=None, reachable=None, max_above=0.03, min_radius=0.08,
+                 dedup_radius=0.02):
+    """Splits YOLO detections into (pickable, ignored) where ignored = [(detection, reason)]. A detection is ignored if:
+    its colour is not used; it has no 3D position; its box contains a visible AprilTag's centre (YOLO mistakes the tag's
+    black-and-white pattern for a cube); its centre is more than max_above above where a cube's centre would be (robot parts,
+    the gripper); it is closer than min_radius to the base axis; the arm cannot reach it (`reachable(xy)` False); or it is a second
+    box within dedup_radius of a more confident one of the same colour. Pickable cubes are sorted by colour, then x, then y."""
+    pickable, ignored = [], []
+    tag_pixels = {str(i): t['pixel'] for i, t in (tags or {}).items() if t.get('pixel')}
+    for o in objects:
+        xyz, reason = o.get('xyz'), None
+        if o.get('label') not in colors:
+            reason = 'colour not used'
+        elif not xyz:
+            reason = 'no depth / not calibrated'
+        else:
+            on_tag = [i for i, (u, v) in tag_pixels.items() if o.get('box') and
+                      o['box'][0] <= u <= o['box'][0] + o['box'][2] and o['box'][1] <= v <= o['box'][1] + o['box'][3]]
+            if on_tag:
+                reason = f'on AprilTag {on_tag[0]} (the tag, not a cube)'
+            elif xyz[2] > table_z + cube_size / 2 + max_above:
+                reason = f'{(xyz[2] - table_z) * 100:.0f} cm above the table (robot part?)'
+            elif math.hypot(xyz[0], xyz[1]) < min_radius:
+                reason = 'too close to the base'
+            elif reachable is not None and not reachable(xyz[:2]):
+                reason = 'out of reach of the arm'
+        if reason:
+            ignored.append((o, reason))
+        else:
+            pickable.append(o)
+    kept = []  # two YOLO boxes on one cube: keep the more confident one
+    for o in sorted(pickable, key=lambda o: -o.get('confidence', 0.0)):
+        if any(k['label'] == o['label'] and math.dist(k['xyz'][:2], o['xyz'][:2]) < dedup_radius for k in kept):
+            ignored.append((o, 'second box on the same cube'))
+        else:
+            kept.append(o)
+    kept.sort(key=lambda o: (o['label'], o['xyz'][0], o['xyz'][1]))
+    return kept, ignored
+
+
+def gripper_is_open(measured_m, open_m, tolerance_m):
+    """True if the gripper is within tolerance_m of its fully open position (either joint polarity). None (no reading) = False."""
+    if measured_m is None:
+        return False
+    return abs(measured_m - open_m) <= tolerance_m
 
 
 def place_offset(offsets, index):

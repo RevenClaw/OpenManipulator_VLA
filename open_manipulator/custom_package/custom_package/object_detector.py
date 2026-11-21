@@ -65,7 +65,7 @@ class ObjectDetector(Node):
         self.declare_parameter('image_size', 640)
         self.declare_parameter('device', 'cpu')
         self.declare_parameter('target_tags', ['20:bin'])     # "<AprilTag id>:<name used in prompts>"
-        self.declare_parameter('object_size', 0.025)           # m; the surface point is pushed back by half of this
+        self.declare_parameter('object_size', 0.035)           # m; the surface point is pushed back by half of this
         self.declare_parameter('rate_hz', 3.0)
         self.declare_parameter('max_frame_skew', 0.1)          # s between the color and depth frames used together
 

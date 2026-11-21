@@ -1,0 +1,21 @@
+# move_test parameters: type fingertip coordinates instead of the camera, through the demos' motion pipeline (no camera, no YOLO).
+#
+#   ros2 run custom_package move_test --ros-args --params-file \
+#       $(ros2 pkg prefix custom_package)/share/custom_package/config/move_test.yaml
+#
+# Scene and motion values: keep them equal to the config you test (pick_place_test.yaml / guided_demo.yaml), so `pp` plans
+# exactly what that demo would.
+move_test:
+  ros__parameters:
+    table_z: -0.056                   # m, table surface in the robot frame; also the floor for typed goals
+    cube_size: 0.035                  # m (pp: grasp at table_z + cube_size/2)
+    bin_height: 0.0                   # m (pp: release at table_z + bin_height + release_clearance)
+    release_clearance: 0.015
+    max_joint_vel: [0.3, 0.2, 0.4, 0.5]   # rad/s j1..j4: the slow test speeds of pick_place_test.yaml
+    max_pitch_deg: 90.0
+    min_pitch_deg: 30.0
+    approach_height: 0.05             # m: far moves arrive this much above the point, then go straight down to it
+    min_z_above_table: 0.0            # m: fingertip never below table_z + this (0 = may touch the table at table_z)
+    settle: 0.5                       # s after a move before the reached position is measured
+    check_grasp: true                 # pp: back out if nothing is in the gripper after closing
+    grasp_closed_threshold: -0.007

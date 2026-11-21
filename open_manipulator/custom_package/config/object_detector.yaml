@@ -10,6 +10,6 @@ object_detector:
     image_size: 640
     device: "cpu"                     # "0" for the first GPU if the robot PC has one
     target_tags: ["20:bin"]           # "<AprilTag 36h11 id>:<name in the prompt>", e.g. ["20:black bin", "24:white bin"]
-    object_size: 0.025                # m, cube edge (the visible surface point is moved back by half of it)
+    object_size: 0.035                # m, cube edge (the visible surface point is moved back by half of it)
     rate_hz: 3.0
     max_frame_skew: 0.1               # s between the color and depth frames used together

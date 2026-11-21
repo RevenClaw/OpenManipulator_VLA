@@ -138,7 +138,7 @@ Useful variations (add to the `scripted_demo` command):
 -p confirm:=false                          # run without asking for each plan (after the first successful runs)
 -p max_attempts_per_object:=5              # more (or fewer) retries per object before giving up on it
 -p "max_joint_vel:=[0.5, 0.3, 0.6, 0.8]"   # faster (j1..j4 rad/s; default in the test config: [0.3, 0.2, 0.4, 0.5])
--p table_z:=0.012 -p cube_size:=0.03       # scene values: table height in the robot frame, object edge (m)
+-p table_z:=-0.056 -p cube_size:=0.035    # scene values: table height in the robot frame, object edge (m)
 -p grasp_closed_threshold:=-0.005          # gripper position (m) at or below which "nothing is held" (closed end = -0.010)
 -p "colors:=['blue']"                      # pick only blue objects (green ones are then left alone)
 -p seed:=1                                 # same choices every run
@@ -166,3 +166,38 @@ ros2 run custom_package scripted_demo --ros-args --params-file \
 # Check what was recorded
 ros2 run custom_package check_episode /workspace/recordings/scripted_pick_place
 ```
+
+## 12. Guided demonstrations: you choose the cube and the bin (recorded)
+
+Same setup as §10/§11 (arm launch, camera with depth, `object_detector`, camera calibrated). Instead of a random task, the script
+lists every cube it sees and asks which one to pick and which bin to put it in; the prompt is built from your choice
+("pick up the blue cube and place it in the red bin") and the episode is executed and recorded like §11.
+Bins = AprilTags: **25 = red bin, 20 = green bin, 18 = blue bin** (`bins` in `config/guided_demo.yaml`). Episodes go to
+`/workspace/recordings/guided_pick_place/`.
+
+```bash
+ros2 run custom_package guided_demo --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/guided_demo.yaml
+#   -p record:=false    run the motions without recording (trials)
+```
+At the prompts: number = choose, `r` = look again, `b` = back, `q` = quit; ENTER on the 🎯 line runs it. Just before running it
+re-checks that the cube is still there (follows it if it moved ≤ 3 cm). Cubes already in a bin are marked `[already in the … bin]`.
+A bin whose tag the camera has never seen can't be chosen; a covered tag keeps its last seen position.
+Detections that are not cubes are listed under 🚫 with the reason (a box on an AprilTag, something high above the table such as the
+gripper, at the base, out of the arm's reach, a second box on the same cube); tune with `cube_max_above`, `min_radius`. There is no
+workspace box: every cube the arm can reach is offered.
+
+## 13. Move test: type the coordinates instead of the camera (no camera, no YOLO)
+Tests only the moving half of the pick-and-place pipeline: typed fingertip coordinates go through the same code as
+`scripted_demo`/`guided_demo` (demo_planning IK, straight-line segments, speed caps → `arm_controller`, gripper action). Needs only
+the arm launch. Coordinates: robot base frame (m), z = fingertip; pitch in degrees (90 = down), optional.
+```bash
+ros2 run custom_package move_test --ros-args --params-file \
+    $(ros2 pkg prefix custom_package)/share/custom_package/config/move_test.yaml
+move> 0.20 0.05 -0.0385          # fingertip to (x, y, z), steepest reachable pitch; far moves: 5 cm above, then straight down
+move> 0.20 0.05 -0.0385 80 c     # with pitch 80°, then close the gripper
+move> o | c | w | r              # open | close | where am I (FK) | back to READY
+move> pp 0.20 0.05 0.14 -0.15    # full planned pick-and-place, cube (0.20, 0.05) -> bin (0.14, -0.15), heights from the yaml
+```
+After every move it prints where the fingertip really got to (forward kinematics) and the error in mm. Goals below
+`table_z + min_z_above_table` are refused (set `table_z` in `config/move_test.yaml` to the same value as the demo you test).

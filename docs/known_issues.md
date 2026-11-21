@@ -211,6 +211,15 @@ deferred. All paths are relative to `open_manipulator/`.
   objects, runs until all are on the target, retries failures, stops by itself; after a failed grasp the arm backs out (lift, open,
   READY) instead of carrying nothing. Tested in simulation with a scripted world: fail → retry → 2 of 2 placed in 3 attempts, and
   an always-failing grasp stopped at objects × 2 attempts. Not yet run on the real arm.
+* **Gripper-open check added 2026-11-21** (`check_gripper_open`, `gripper_open_tolerance` 0.004 m; on by default): before every pick,
+  after the move to READY, the measured `gripper_left_joint` must be within the tolerance of `GRIPPER_OPEN_M` (0.019). Otherwise it
+  opens once more (1.5 s) and, if still not open, pauses the loop (`⚠️ gripper did not open …`, ENTER to continue); the attempt is not
+  counted as a failed pick. Unit-tested (`gripper_is_open`) and the check exercised with stubbed readings; not yet run on the real arm.
+* **`guided_demo` added 2026-11-21** (`config/guided_demo.yaml`): the operator picks the cube and the bin from a list (bins = tags
+  25 red, 20 green, 18 blue), the prompt follows the choice, the episode runs and records through `scripted_demo`'s code. Bin positions
+  come from the detector's `tags` output (any tag, not only its `target_tags`). Unit tests (`test/test_guided_demo.py`) and the menu
+  flow replayed in-process with fake detections (choose, refuse an unseen bin, back, cube moved → plan follows, cube removed → menu,
+  quit). Not yet run on the real arm or with a real recording.
 
 ## 15. Gripper open/close inverted on the real arm  *(🔧 fixed 2026-11-19 in the driver config, not yet tested on hardware)*
 

@@ -35,6 +35,8 @@ setup(
             'object_detector = custom_package.object_detector:main',
             'calibrate_camera = custom_package.calibrate_camera:main',
             'scripted_demo = custom_package.scripted_demo:main',
+            'guided_demo = custom_package.guided_demo:main',
+            'move_test = custom_package.move_test:main',
         ],
     },
 )

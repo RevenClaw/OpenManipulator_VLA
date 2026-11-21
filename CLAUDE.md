@@ -47,6 +47,11 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
     `launch/pick_place_test.launch.py` starts camera (depth) + detector (`targets:="19:blue marker,25:green marker"`). Test mode (`until_clear`, `confirm`,
     `remember_targets`, `place_offsets` in `scripted_demo`): counts the objects, retries failed picks (≤ 3 per object, ≤ objects × 3 in
     total), backs out after a failed grasp, keeps a covered tag's last position, drops successive objects 5 cm apart around the tag.
+    `guided_demo.py` + `config/guided_demo.yaml`: same pipeline, but the operator chooses cube + bin from a list (bins = tags 25 red,
+    20 green, 18 blue), prompt built from the choice, then recorded (dataset `guided_pick_place`). Subclass of `ScriptedDemo`.
+    `move_test.py` + `config/move_test.yaml`: typed fingertip goals (`x y z [pitch] [o|c]`, `pp cx cy bx by`) through the same motion
+    code, no camera (tests the moving half alone).
+    Before every pick (all modes) it checks the gripper measures open (`check_gripper_open`, ±`gripper_open_tolerance` 0.004 m), else pauses.
     Grasp height = `table_z + cube_size/2` from the config only (the camera supplies x, y). `table_z` is NOT necessarily 0: z = 0 is
     link1's origin, the table is probably 8–17 mm lower; measure it (the fingertip z that `calibrate_camera` prints for tags on the table).
   - **READY** = `episode_tools.READY` `[0.0, -0.2547, -0.1520, 1.6284]` (gripper 70° down at (0.16, 0, 0.12) m): start pose of every

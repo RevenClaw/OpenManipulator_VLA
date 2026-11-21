@@ -25,7 +25,7 @@ stock photo, the real converter), **nothing yet on the real arm or with the real
 
 ## 0. What you need
 - The OM-X on the robot PC, the RealSense D435 on a **USB 3** port, the container built from the current Dockerfile.
-- Cubes the YOLO model knows: **red, green, blue**, about 2.5 cm (measure yours). **No other coloured objects** on the table:
+- Cubes the YOLO model knows: **red, green, blue**, 3.5 cm (measure yours). **No other coloured objects** on the table:
   the model only knows these three classes and forces anything else into one of them (a yellow cube was detected as "green"
   in testing).
 - One target: a **flat tray or shallow bin** that the arm can reach, with an **AprilTag 36h11** (e.g. ID 20) flat at its centre.
@@ -118,10 +118,10 @@ ros2 run custom_package calibrate_camera
 ## 5. Measure the scene values 🔧 (`config/scripted_demo.yaml`, `config/object_detector.yaml`)
 | Value | How |
 |---|---|
-| `cube_size` (and `object_size` in the detector) | ruler, metres (0.025 = 2.5 cm) |
+| `cube_size` (and `object_size` in the detector) | ruler, metres (0.035 = 3.5 cm) |
 | `bin_height` | rim height of the tray/bin above the table |
 | `target_xy_offset` | `[0, 0]` if the tag is at the bin centre; otherwise the offset from the tag to the drop point |
-| `workspace_x`, `workspace_y` | the area where you put cubes; cubes outside are ignored |
+| (no workspace box) | every cube the arm can reach is used; `min_radius` (0.08 m) ignores detections at the base, `cube_max_above` (0.03 m) ignores things above the table (the arm itself) |
 | `colors`, `prompt_template`, `color_targets` | which cubes to pick and how prompts read; `color_targets: ["red:red bin"]` fixes a bin per colour |
 
 ---
@@ -135,7 +135,7 @@ stops. Nothing is recorded. To change the colours or tags: `colors` and `color_t
 on the launch (the names must match).
 
 **What you need on the table:** tags 19 and 25 flat on the table, 12–25 cm from the base, away from where objects lie (at least 8 cm
-from every object), and 1–3 small blue/green objects about the size of the cubes (`cube_size`, default 2.5 cm). Red ones may stay on
+from every object), and 1–3 small blue/green objects about the size of the cubes (`cube_size`, default 3.5 cm). Red ones may stay on
 the table. The calibration tags must use other ids (§0). No other coloured things in view (YOLO only knows red, green and blue and
 forces anything else into one of them).
 
@@ -166,9 +166,9 @@ ros2 run custom_package scripted_demo --ros-args --params-file \
 ```
 🎯  episode_0000: "pick up the red object and place it on the marker"  cube (0.200, 0.100) -> marker (0.140, -0.150), pitch 85°, 35.1 s
         pregrasp      x 0.200  y 0.100  z 0.072  pitch 85°
-        grasp         x 0.200  y 0.100  z 0.013  pitch 85°
+        grasp         x 0.200  y 0.100  z 0.018  pitch 85°
         ...
-        release       x 0.140  y -0.150  z 0.025  pitch 85°
+        release       x 0.140  y -0.150  z 0.015  pitch 85°
 ❓  ENTER = execute this plan, s = skip it (nothing moves), q = quit
 ```
 Type **`s`** a few times and compare the numbers with a ruler: `x, y` of the pick must match the object's position, `x, y` of
@@ -178,6 +178,8 @@ half the object's height. If not, fix calibration, `table_z` or `cube_size` befo
 **Step D: first real motion.** One object on the table, **hand on the power switch**, speed already reduced in the config
 (`max_joint_vel [0.3, 0.2, 0.4, 0.5]`). Press **ENTER** on a plan and watch: the arm goes READY → above the object → down →
 close → up → over the marker → down → open → up → READY. Press **Ctrl+C** at any moment: the arm holds.
+Before each pick the script checks that the gripper really is open (`✅ gripper open (0.0189 m)`); if it isn't after one retry,
+it pauses with `⚠️ gripper did not open …`. Disable with `-p check_gripper_open:=false`; widen with `gripper_open_tolerance`.
 
 **Step D2: is the arm reaching the table? 🔧** Before every close the script prints where the fingertip really is:
 ```
@@ -249,6 +251,13 @@ several task strings (several colours), and black wrist frames (no wrist camera 
 
 ---
 
+### 7b. Alternative: guided recording (you choose cube + bin)
+`ros2 run custom_package guided_demo --ros-args --params-file $(ros2 pkg prefix custom_package)/share/custom_package/config/guided_demo.yaml`
+lists the detected cubes and the bins (tags 25 red, 20 green, 18 blue; `bins` parameter), asks which cube and which bin, builds
+the prompt from that ("pick up the {color} cube and place it in the {target}") and records the episode exactly like `scripted_demo`
+(same planning, checks, metadata; dataset `guided_pick_place`). Use it to control the mix of colour/bin combinations in the data.
+Quick reference: `docs/custom_commands_guide.md` §12.
+
 ## 8. Bulk recording: ~200–300 episodes
 - Same command as §7 with `-p episodes:=0` (until `q`); several sessions are fine (numbering continues).
 - Spread the cubes over the whole workspace each time you reset; vary which colours are left.
@@ -292,9 +301,10 @@ Evaluate the 5k/10k/15k checkpoints early (`IMPLEMENTATION_PLAN.md` T6.3).
 | `no fresh detections (is object_detector running?)` | T3 not running, or the camera was started without `depth:=true` |
 | detector: `depth and color sizes differ` | camera without `depth:=true` (no aligned depth) |
 | `no target (AprilTag) visible` | tag covered, too small, or not in `target_tags` |
-| `no reachable cube` | cubes outside `workspace_x/y` or out of reach; it pauses: move them closer, ENTER |
+| `no reachable cube` | the cubes are out of the arm's reach (or filtered: on a tag, at the base); it pauses: move them closer, ENTER |
 | grasps miss by a constant offset | calibration (§4), `table_z`, `cube_size`/`object_size` |
 | every trial says "nothing held" | `grasp_closed_threshold` too high: it must lie between the closed-on-nothing value (−0.010) and the value with an object held |
+| `gripper did not open (… m, expected 0.019 ± 0.004 m)` → paused | something still held, gripper servo (ID 15) in error, or polarity wrong (issue #15); `None m` = no `gripper_left_joint` in `/joint_states` |
 | place check fails although the cube is in the bin | `target_radius` too small, or `target_xy_offset` wrong |
 | `/joint_states: 0.5 s gap` → episode deleted | load spike on the PC; if frequent: `storage_preset: "none"`, close other programs |
 | joint2 overload (`0x20`) | lower `max_joint_vel` (shoulder value first); report it |

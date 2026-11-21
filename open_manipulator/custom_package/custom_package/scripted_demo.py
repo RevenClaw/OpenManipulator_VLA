@@ -68,10 +68,19 @@ class Finished(Exception):
     """Nothing is left to pick (all objects at the target, or the rest is unreachable / given up on)."""
 
 
+def height_report(cube, target, plan, cfg):
+    """One line comparing what the camera measured (z) with what the plan aims for. The plan's heights come only from the
+    config (table_z, cube_size, bin_height, release_clearance); the camera's z is shown for comparison, not used."""
+    cam_cube = cube['xyz'][2] if len(cube.get('xyz') or []) > 2 else float('nan')
+    cam_tag = (target.get('xyz') or [0, 0, float('nan')])[2]
+    return (f'z: cube centre camera {cam_cube:+.3f} / grasp aim {plan.waypoints["grasp"][2]:+.3f}   '
+            f'tag camera {cam_tag:+.3f} / table_z {cfg.table_z:+.3f}   release aim {plan.waypoints["release"][2]:+.3f}  (m)')
+
+
 class ScriptedDemo(Node):
 
-    def __init__(self):
-        super().__init__('scripted_demo')
+    def __init__(self, node_name='scripted_demo'):
+        super().__init__(node_name)
         dp = self.declare_parameter
         dp('dataset', 'scripted_pick_place')                   # folder under data_dir
         dp('data_dir', '/workspace/recordings')
@@ -102,9 +111,9 @@ class ScriptedDemo(Node):
         dp('image_reliable_qos', True)
         # planning (demo_planning.PlanConfig)
         dp('table_z', 0.0)
-        dp('cube_size', 0.025)
+        dp('cube_size', 0.035)
         dp('bin_height', 0.04)
-        dp('release_clearance', 0.03)
+        dp('release_clearance', 0.015)
         dp('max_joint_vel', [0.5, 0.3, 0.6, 0.8])               # rad/s per joint; vla_bridge must allow at least these
         dp('max_pitch_deg', 90.0)
         dp('min_pitch_deg', 30.0)
@@ -114,11 +123,13 @@ class ScriptedDemo(Node):
         dp('confirm', False)                                    # print each plan and wait: ENTER = execute, s = skip, q = quit
         dp('until_clear', False)                                # count the objects, keep going until all are at the target
         dp('max_attempts_per_object', 3)                        # until_clear: give up on an object after this many failed picks
-        dp('workspace_x', [0.08, 0.32])                         # m, cubes outside are ignored
-        dp('workspace_y', [-0.25, 0.25])
+        dp('min_radius', 0.08)                                  # m from the base axis; closer detections are ignored
+        dp('cube_max_above', 0.03)                              # m: detections whose centre is higher than a cube's by this are ignored
         dp('variation', True)
         dp('correction_prob', 0.1)
         # checks
+        dp('check_gripper_open', True)                          # before every pick: the gripper must measure open, else pause
+        dp('gripper_open_tolerance', 0.004)                     # m from GRIPPER_OPEN_M that still counts as open
         dp('check_grasp', True)                                 # False on mock hardware (the gripper always closes fully)
         dp('grasp_closed_threshold', -0.007)                    # m; at or below = closed on nothing (closed end = -0.010)
         dp('check_place', True)
@@ -312,6 +323,25 @@ class ScriptedDemo(Node):
         with self.lock:
             return self.gripper_m
 
+    def ensure_gripper_open(self):
+        """Check before every pick: the gripper must measure open (within gripper_open_tolerance of GRIPPER_OPEN_M). One retry
+        with a longer wait, then Aborted, which pauses the loop until ENTER: nothing moves toward the object with closed fingers."""
+        if not self.p('check_gripper_open'):
+            return
+        tol = float(self.p('gripper_open_tolerance'))
+        with self.lock:
+            measured = self.gripper_m
+        if D.gripper_is_open(measured, GRIPPER_OPEN_M, tol):
+            print(f'  ✅  gripper open ({measured:.4f} m)')
+            return
+        print(f'  ⚠️  gripper not open ({measured} m, expected {GRIPPER_OPEN_M} ± {tol} m): opening again')
+        measured = self.gripper(0.0, 1.5)
+        if D.gripper_is_open(measured, GRIPPER_OPEN_M, tol):
+            print(f'  ✅  gripper open ({measured:.4f} m)')
+            return
+        raise Aborted(f'gripper did not open ({measured} m, expected {GRIPPER_OPEN_M} ± {tol} m): remove anything held, '
+                      'check the gripper servo (ID 15) and its polarity (known issue #15)')
+
     def hold(self):
         """Stops the arm where it is (one-point trajectory on the topic: works even while a goal is running)."""
         q = self.current_joints()
@@ -325,10 +355,14 @@ class ScriptedDemo(Node):
             self.cmd_q = q
 
     # ------------------------------------------------------------------ tasks
+    def screen(self, det):
+        """(pickable cubes, [(ignored detection, reason)]): demo_planning.screen_cubes with this node's parameters."""
+        return D.screen_cubes(det['objects'], self.colors, self.cfg.table_z, self.cfg.cube_size, det.get('tags'),
+                              lambda xy: D.cube_reachable(xy, self.cfg), float(self.p('cube_max_above')),
+                              float(self.p('min_radius')))
+
     def choose_task(self, det):
         """(cube, target, plan, variation, prompt) for a random reachable cube, or raises Aborted with the reason."""
-        lo_x, hi_x = self.p('workspace_x')
-        lo_y, hi_y = self.p('workspace_y')
         if not det.get('calibrated', True):
             raise Aborted('the camera is not calibrated (no camera_calibration.yaml): run calibrate_camera first')
         targets = [t for t in det['targets'] if t.get('xyz')]
@@ -338,11 +372,10 @@ class ScriptedDemo(Node):
             targets += cached
         if not targets:
             raise Aborted('no target (AprilTag) visible')
-        cubes = [o for o in det['objects'] if o['label'] in self.colors and o.get('xyz')
-                 and lo_x <= o['xyz'][0] <= hi_x and lo_y <= o['xyz'][1] <= hi_y]
+        cubes, _ = self.screen(det)
         if not cubes:
             if self.until_clear and self.attempts:
-                raise Finished('no objects left in the workspace')
+                raise Finished('no reachable objects left')
             raise Aborted('no reachable cube among 0 detected')
         items, at_target, given_up, no_target = [], 0, 0, set()
         for cube in cubes:
@@ -538,12 +571,14 @@ class ScriptedDemo(Node):
         print(f'\n  🎯  {name}: "{prompt}"  cube ({cube["xyz"][0]:.3f}, {cube["xyz"][1]:.3f}) -> '
               f'{target["name"]} [tag {target["id"]}] ({target_xy[0]:.3f}, {target_xy[1]:.3f}), pitch {np.degrees(plan.pick_pitch):.0f}°, '
               f'{plan.duration:.1f} s' + ('  [target tag covered: using its last seen position]' if target.get('cached') else ''))
+        print('        ' + height_report(cube, target, plan, self.cfg))
         if self.p('confirm') and not self.confirmed(plan):
             return 'skipped'
-        self.attempts += 1
 
         self.gripper(0.0, 0.3)
         self.move_to(plan.start)
+        self.ensure_gripper_open()
+        self.attempts += 1  # counted only once the episode can really start (a closed gripper is not a failed pick)
         problems = self.preflight()
         if problems and self.record:
             raise Aborted('not ready: ' + '; '.join(problems))
@@ -667,16 +702,17 @@ def keyboard(state, node):
         state['event'].set()
 
 
-def main(args=None):
+def main(args=None, node_class=None, title='Scripted Pick-and-Place Demonstrations'):
+    """Run loop shared with guided_demo (node_class = a ScriptedDemo subclass)."""
     rclpy.init(args=args)
-    node = ScriptedDemo()
+    node = (node_class or ScriptedDemo)()
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
     print()
     print('=' * 66)
-    print('  🤖  OpenManipulator-X  |  Scripted Pick-and-Place Demonstrations')
+    print(f'  🤖  OpenManipulator-X  |  {title}')
     print('=' * 66)
     print(f'  Saving to: {node.data_dir}' if node.record else '  🧪  TRIAL MODE: episodes are executed but NOT recorded')
     print(f'  Prompt: "{node.template}"  colours {node.colors}, speed caps j1..j4 {list(node.cfg.max_joint_vel)} rad/s')

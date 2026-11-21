@@ -79,6 +79,28 @@ This document provides a complete, itemized technical record of all modification
      `remember_targets` and `place_offsets` (+ `demo_planning.place_offset`), so objects can be placed ON a tag.
    * `scripted_demo until_clear` (on in the test config): counts the objects, retries failed picks (cap `max_attempts_per_object` per
      object and objects × that in total), stops by itself; `run_plan`/`back_out` abort a failed grasp (lift, open, READY).
+   * Gripper-open check (2026-11-21): `scripted_demo.ensure_gripper_open` (+ `demo_planning.gripper_is_open`) runs before every pick
+     and pauses the loop if the gripper does not measure open after one retry. Params `check_gripper_open` (true),
+     `gripper_open_tolerance` (0.004 m).
+   * `guided_demo` (2026-11-21, entry point + `config/guided_demo.yaml` + `test/test_guided_demo.py`): subclass of `ScriptedDemo` whose
+     `choose_task` lists the cubes and bins and asks the operator (cube, then bin, then ENTER); prompt from the template, cube re-checked
+     just before running. `scripted_demo`: `ScriptedDemo(node_name=…)` and `main(args, node_class, title)` so the run loop is shared.
+   * Real cube size 3.5 cm (2026-11-21): defaults `cube_size` 0.035 / `release_clearance` 0.015 (`demo_planning.PlanConfig`,
+     `scripted_demo`, `guided_demo.yaml`) and the detector's `object_size` 0.035 (`object_detector.py` + `.yaml`).
+   * Height diagnostics (2026-11-21): `scripted_demo.height_report` prints under every 🎯 plan line the camera z of the cube (centre)
+     and of the tag next to the planned grasp / release z and `table_z`; `guided_demo`'s menu lists z (camera) and aim z per cube and bin.
+     Print only: the planned heights still come from the config.
+   * `move_test` (2026-11-21, entry point + `config/move_test.yaml` + `test/test_move_test.py`): terminal `x y z [pitch] [o|c]`,
+     `o`/`c`, `pp cx cy bx by`, `w`, `r` through the demos' motion code (subclass of `ScriptedDemo`: `execute`, `gripper`,
+     `run_plan`), no camera. Reports the reached fingertip pose and error after each move; floor = `table_z + min_z_above_table`.
+     Not yet tested on hardware.
+   * Cube screening (2026-11-21, `demo_planning.screen_cubes`, used by `scripted_demo` and `guided_demo`): YOLO boxes are ignored if they
+     contain a visible AprilTag's centre (tags detected as blue cubes), if their centre is > `cube_max_above` (0.03 m) above a cube on the
+     table (robot parts / gripper detected as blue), closer than `min_radius` (0.08 m) to the base, outside the workspace, or a second box
+     on the same cube (same colour within 2 cm). `guided_demo` lists the ignored detections with the reason.
+   * No workspace box any more (2026-11-21): `workspace_x` / `workspace_y` removed (still present in older yamls, ignored). A cube is
+     pickable if the arm can reach it: `demo_planning.cube_reachable` (IK for the grasp point and 7 cm above it at some pitch in
+     `min_pitch_deg..max_pitch_deg`); e.g. a cube beside the base at x -0.04, y 0.20 is now offered.
    * Gripper polarity (2026-11-19, known issue #15): this arm's gripper is inverted w.r.t. ROBOTIS's convention. Fixed in the real-hardware driver
      config: servo 15's `[unit info]` in `open_manipulator_x_position.ros2_control.xacro` is mirrored (factor negated, offset 0.045099321), so
      everything above the driver (and mock hardware) keeps the stock +0.019 open / −0.010 close.

@@ -29,7 +29,7 @@ def test_plan_reaches_the_cube_and_the_target():
     x, y, z, _ = forward_kinematics(by_name['lower'].joints[-1])
     assert math.dist((x, y), (0.15, -0.15)) < 0.002 and abs(z - (CFG.bin_height + CFG.release_clearance)) < 0.002
     np.testing.assert_allclose(by_name['ready'].joints[-1], D.READY, atol=1e-9)
-    assert plan.pick_pitch == pytest.approx(math.radians(90))  # close enough to point straight down
+    assert math.radians(80) <= plan.pick_pitch <= math.radians(90)  # (nearly) straight down; 85° with the 3.5 cm cube
 
 
 def test_far_cube_uses_a_tilted_gripper():
@@ -131,9 +131,48 @@ def test_placing_on_a_flat_marker_releases_just_above_the_table():
     assert abs(lowest - 0.025) < 0.002 and abs(plan.waypoints['release'][2] - 0.025) < 1e-9
 
 
+def test_gripper_is_open():
+    # Stock polarity (open 0.019): fully open and slightly short pass; half-open, closed and no reading fail.
+    assert D.gripper_is_open(0.019, 0.019, 0.004) and D.gripper_is_open(0.0155, 0.019, 0.004)
+    assert not D.gripper_is_open(0.005, 0.019, 0.004) and not D.gripper_is_open(-0.010, 0.019, 0.004)
+    assert not D.gripper_is_open(None, 0.019, 0.004)
+    # Inverted polarity (open -0.010) works the same way.
+    assert D.gripper_is_open(-0.009, -0.010, 0.004) and not D.gripper_is_open(0.019, -0.010, 0.004)
+
+
 def test_gripper_holding_works_for_either_polarity():
     # This arm: open -0.010, closed 0.019. Closed on nothing (0.019) -> not holding; stopped at a cube (0.004) -> holding.
     assert D.gripper_holding(0.004, 0.016, -0.010, 0.019) and not D.gripper_holding(0.019, 0.016, -0.010, 0.019)
     assert not D.gripper_holding(None, 0.016, -0.010, 0.019)
     # The stock ROBOTIS polarity (open 0.019, closed -0.010) with the mirrored threshold behaves the same way.
     assert D.gripper_holding(0.004, -0.007, 0.019, -0.010) and not D.gripper_holding(-0.010, -0.007, 0.019, -0.010)
+
+
+def test_screen_cubes():
+    def det(label, x, y, z, box=(100, 100, 40, 40), conf=0.9):
+        return {'label': label, 'xyz': [x, y, z], 'box': list(box), 'confidence': conf}
+    tags = {'18': {'pixel': [410.0, 220.0]}}
+    cfg = D.PlanConfig(table_z=-0.056, cube_size=0.035)
+    reach = lambda xy: D.cube_reachable(xy, cfg)  # noqa: E731
+    objs = [det('red', -0.037, 0.204, -0.042),                       # beside the base, behind x = 0: reachable, kept
+            det('green', 0.21, -0.025, -0.036),
+            det('green', 0.43, -0.23, -0.074),                         # too far for the arm
+            det('blue', 0.126, -0.048, 0.142),                         # gripper / robot part
+            det('blue', 0.156, 0.128, -0.074, box=(379, 197, 59, 51)), # AprilTag 18 seen as a blue cube
+            det('blue', 0.02, 0.01, -0.04),                            # at the base
+            det('yellow', 0.2, 0.0, -0.04), {'label': 'red', 'xyz': None, 'box': [0, 0, 1, 1], 'confidence': 0.9}]
+    ok, ignored = D.screen_cubes(objs, ['red', 'green', 'blue'], -0.056, 0.035, tags, reach)
+    assert [(o['label'], o['xyz'][0]) for o in ok] == [('green', 0.21), ('red', -0.037)]
+    reasons = [r for _, r in ignored]
+    assert any('above the table' in r for r in reasons) and any('AprilTag 18' in r for r in reasons)
+    assert 'too close to the base' in reasons and 'colour not used' in reasons and 'no depth / not calibrated' in reasons
+    assert 'out of reach of the arm' in reasons
+    twice = [det('green', 0.208, -0.018, -0.04, conf=0.53), det('green', 0.211, -0.025, -0.035, conf=0.77)]
+    ok, ignored = D.screen_cubes(twice, ['green'], -0.056, 0.035)
+    assert [o['confidence'] for o in ok] == [0.77] and ignored[0][1] == 'second box on the same cube'
+
+
+def test_cube_reachable():
+    cfg = D.PlanConfig(table_z=-0.056, cube_size=0.035)
+    assert D.cube_reachable((0.20, 0.0), cfg) and D.cube_reachable((-0.037, 0.204), cfg) and D.cube_reachable((0.0, -0.2), cfg)
+    assert not D.cube_reachable((0.45, 0.0), cfg) and not D.cube_reachable((0.43, -0.23), cfg)

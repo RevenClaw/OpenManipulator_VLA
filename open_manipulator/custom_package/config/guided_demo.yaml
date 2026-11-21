@@ -1,0 +1,66 @@
+# guided_demo parameters: operator-guided pick-and-place demonstrations (you choose the cube and the bin, the prompt is built
+# from your choice, the episode is executed and recorded). Everything not listed here works as in scripted_demo.yaml.
+#
+#   ros2 run custom_package guided_demo --ros-args --params-file \
+#       $(ros2 pkg prefix custom_package)/share/custom_package/config/guided_demo.yaml
+#   ... -p record:=false        # trial mode: run the motions and checks, record nothing
+guided_demo:
+  ros__parameters:
+    # Dataset
+    dataset: "guided_pick_place"      # -> /workspace/recordings/guided_pick_place/episode_NNNN
+    data_dir: "/workspace/recordings"
+    record: true                      # false = trial mode
+    episodes: 0                       # stop after this many saved episodes (0 = until q)
+    seed: -1
+
+    # Task choice
+    bins: ["25:red bin", "20:green bin", "18:blue bin"]   # "<AprilTag id>:<name in the prompt>", listed in this order
+    colors: ["red", "green", "blue"]  # YOLO classes listed as cubes
+    prompt_template: "pick up the {color} cube and place it in the {target}"   # {color} = cube, {target} = bin name
+    recheck_max_move: 0.03            # m: the chosen cube may have moved this much before the run (the plan follows it)
+    confirm: false                    # the menu already asks before every run
+    until_clear: false
+
+    # Recorded streams (same as scripted_demo / record_episodes)
+    state_topic: "/joint_states"
+    action_topic: "/teleop/action"
+    action_rate: 30.0
+    front_topic: "/camera/front/color/image_raw"
+    wrist_topic: ""
+    extra_topics: [""]
+    min_rate_state: 50.0
+    min_rate_action: 20.0
+    min_rate_camera: 12.0
+    stale_after: 0.3
+    max_gap: 0.2
+    lead_in: 1.0
+    tail: 0.5
+    storage: "mcap"
+    storage_preset: "zstd_fast"
+    min_free_gb: 5.0
+
+    # Scene and motion (same values as scripted_demo.yaml; measure on your setup)
+    table_z: -0.056                   # m, table surface in the robot frame
+    cube_size: 0.035                  # m (object_detector.yaml: object_size should match)
+    bin_height: 0.0                   # m, rim height of the bins (0 = flat marker); measure it for real trays/bins
+    release_clearance: 0.015          # m above the rim when opening (same value as scripted_demo.yaml / pick_place_test.yaml)
+    target_xy_offset: [0.0, 0.0]      # m from a bin's AprilTag to the drop point (0 if the tag is at the bin centre)
+    place_offsets: [0.0, 0.0]         # [dx0, dy0, dx1, dy1, ...]: successive drops into the same bin, cycling (0 0 = centre)
+    remember_targets: true
+    max_joint_vel: [0.5, 0.3, 0.6, 0.8]   # rad/s per joint; vla_bridge's max_joint_vel_per_joint must match for policy runs
+    max_pitch_deg: 90.0
+    min_pitch_deg: 30.0
+    # No workspace box: every cube the arm can reach is offered (demo_planning.cube_reachable); unreachable ones are listed as ignored.
+    min_radius: 0.08                  # m from the base axis: closer detections are ignored (the base itself)
+    cube_max_above: 0.03              # m: detections whose centre is this much higher than a cube on the table = robot parts, ignored
+    variation: true                   # small random variations per episode (DATASET_PLAN.md §4.4)
+    correction_prob: 0.1
+
+    # Checks
+    check_gripper_open: true          # before every pick the gripper must measure open
+    gripper_open_tolerance: 0.004
+    check_grasp: true
+    grasp_closed_threshold: -0.007    # m; gripper at or below this after closing = nothing held
+    check_place: true
+    target_radius: 0.06               # m around the drop point that counts as "in the bin"; also marks cubes already in a bin
+    gripper_max_effort: 1.0
