@@ -96,7 +96,7 @@ class ScriptedDemo(Node):
         dp('action_rate', 30.0)
         dp('state_topic', '/joint_states')
         dp('front_topic', '/camera/front/color/image_raw')
-        dp('wrist_topic', '')
+        dp('wrist_topic', '')                  # '/camera/wrist/color/image_raw' = record the wrist D435 too
         dp('extra_topics', [''])
         dp('min_rate_state', 50.0)
         dp('min_rate_action', 20.0)

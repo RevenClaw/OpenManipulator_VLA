@@ -26,7 +26,7 @@ guided_demo:
     action_topic: "/teleop/action"
     action_rate: 30.0
     front_topic: "/camera/front/color/image_raw"
-    wrist_topic: ""
+    wrist_topic: "/camera/wrist/color/image_raw"   # D435 on the gripper (cameras.launch.py); "" = not recorded
     extra_topics: [""]
     min_rate_state: 50.0
     min_rate_action: 20.0

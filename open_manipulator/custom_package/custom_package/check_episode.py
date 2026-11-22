@@ -7,7 +7,7 @@
 #
 #   ros2 run custom_package check_episode /workspace/recordings/pick_up_the_red_cube/episode_0003
 #   ros2 run custom_package check_episode /workspace/recordings/pick_up_the_red_cube      # every episode in the folder
-#   ros2 run custom_package check_episode <dir> --max-gap 0.3 --min-rate /camera/wrist/image_raw=10
+#   ros2 run custom_package check_episode <dir> --max-gap 0.3 --min-rate /camera/wrist/color/image_raw=10
 #
 # Uses message receive times (no deserialization), so it is fast. The converter on the server repeats these checks on
 # header stamps (vla_layer/omx_pi05/dataset.py).

@@ -82,8 +82,10 @@ ros2 run custom_package log_ee_pose --ros-args -p once:=true            # one li
 ## 8. VLA bridge
 
 ```bash
-# Front camera first. No camera: black frames with -p fake_images:=true (ros2 run) or fake_images:=true (launch)
-ros2 launch custom_package camera_front.launch.py
+# Cameras first: D455 above the table (/camera/front) + D435 on the wrist (/camera/wrist), picked by serial number.
+# No camera: black frames with -p fake_images:=true (ros2 run) or fake_images:=true (launch)
+ros2 launch custom_package cameras.launch.py
+#   a policy trained WITHOUT wrist images: add -p wrist_image_topic:="" to the bridge (black wrist frames, as in training)
 
 # Bridge with terminal menu: e = enable, d = disable (hold), s = status, q = quit
 ros2 run custom_package vla_bridge --ros-args \
@@ -112,8 +114,9 @@ homing option 2) first. Once per container start: `bash /root/ros2_ws/src/open_m
 model in `workspace/models/yolo_cubes.pt`. Full procedure with checks and troubleshooting: `docs/finetuning_procedure.md`, section 6.
 
 ```bash
-# Camera (with depth) + object_detector, one launch. Leave it running. Tag 19 = "blue marker", tag 25 = "green marker".
+# Cameras (front D455 with depth + wrist D435) + object_detector, one launch. Leave it running. Tag 19 = "blue marker", tag 25 = "green marker".
 ros2 launch custom_package pick_place_test.launch.py
+ros2 launch custom_package pick_place_test.launch.py wrist:=false     # front camera only
 ros2 launch custom_package pick_place_test.launch.py model_path:=/workspace/models/yolo_cubes.pt targets:="19:blue marker,25:green marker"   # the defaults
 
 # Look at what it sees (RViz: Add → By topic → /object_detector/annotated → Image)
@@ -169,7 +172,9 @@ ros2 run custom_package check_episode /workspace/recordings/scripted_pick_place
 
 ## 12. Guided demonstrations: you choose the cube and the bin (recorded)
 
-Same setup as §10/§11 (arm launch, camera with depth, `object_detector`, camera calibrated). Instead of a random task, the script
+Same setup as §10/§11 (arm launch, `pick_place_test.launch.py` = both cameras + `object_detector`, camera calibrated).
+The episodes record the front D455 **and** the wrist D435 (`wrist_topic: /camera/wrist/color/image_raw` in `guided_demo.yaml`;
+`""` = front only). Instead of a random task, the script
 lists every cube it sees and asks which one to pick and which bin to put it in; the prompt is built from your choice
 ("pick up the blue cube and place it in the red bin") and the episode is executed and recorded like §11.
 Bins = AprilTags: **25 = red bin, 20 = green bin, 18 = blue bin** (`bins` in `config/guided_demo.yaml`). Episodes go to
@@ -201,3 +206,37 @@ move> pp 0.20 0.05 0.14 -0.15    # full planned pick-and-place, cube (0.20, 0.05
 ```
 After every move it prints where the fingertip really got to (forward kinematics) and the error in mm. Goals below
 `table_z + min_z_above_table` are refused (set `table_z` in `config/move_test.yaml` to the same value as the demo you test).
+
+## 14. Two cameras: front D455 + wrist D435
+
+| Camera | Serial | Where | Topics |
+|---|---|---|---|
+| D455 | `207322250030` | above the table (front) | `/camera/front/color/image_raw` **1280×800** (+ `/camera/front/aligned_depth_to_color/image_raw`, depth 848×480 aligned to it, with `depth:=true`; not 1280×720: the D455 then sees nothing closer than ~52 cm, i.e. no cube tops) |
+| D435 | `927522071177` | on the gripper (wrist) | `/camera/wrist/color/image_raw` 640×480 (color only) |
+
+All at **15 fps** (the policy's control rate; don't change it). Smaller front frames: `color_profile:=640,480,15 depth_profile:=640,480,15`.
+A bigger wrist picture (`wrist_profile:=1280,720,15`) needs the D435 on USB 3. Disk: a 1280×800 front episode is ~3× the old
+~180 MB (≈ 0.6 GB per 20–30 s episode with the wrist view): check `df -h` before long sessions.
+
+```bash
+rs-enumerate-devices -s          # both listed? (close realsense-viewer first: only one program can open a camera)
+lsusb -t                         # D455 with depth must be on USB 3 (5000M); the color-only wrist D435 also works at 480M
+ros2 launch custom_package cameras.launch.py               # both, color only (vla_bridge, record_episodes)
+ros2 launch custom_package cameras.launch.py depth:=true   # + front depth (object_detector; pick_place_test.launch.py does this)
+ros2 launch custom_package cameras.launch.py front_serial:=_<serial> wrist_serial:=_<serial>   # other cameras (leading _)
+ros2 topic hz /camera/wrist/color/metadata                  # ~15 Hz
+```
+**Colour settings** of the front D455 (exposure, white balance, saturation, gamma, ...): `config/camera_front.yaml`, loaded by both
+launches (`color_config:=` another file, `''` = camera defaults). Try values live while watching RViz, then copy them into the yaml:
+```bash
+ros2 param dump /camera/front | grep -A20 rgb_camera        # current values (incl. what auto exposure / white balance chose)
+ros2 param set /camera/front rgb_camera.saturation 80
+```
+For the dataset, lock the colours once they look right (`enable_auto_exposure` / `enable_auto_white_balance: false` + the values
+auto had chosen) and keep them for every session.
+
+Power: each camera directly in a PC port (or a powered hub), not both on one unpowered hub: the D455 browns the hub out when it
+starts streaming and every device on it (cameras, U2D2) disconnects.
+YOLO and the calibration use only the front camera. A new front camera = **recalibrate** (`calibrate_camera`, §10) and re-measure
+`table_z`. Recorded: `wrist_topic` in `record_episodes.yaml` / `guided_demo.yaml` (set; `scripted_demo.yaml` / `pick_place_test.yaml`:
+add `wrist_topic: "/camera/wrist/color/image_raw"` to record it there too).

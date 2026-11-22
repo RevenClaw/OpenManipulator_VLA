@@ -199,7 +199,7 @@ The bridge uses the Intel RealSense D435 by default (`fake_images: false`). Chec
 rs-enumerate-devices -s          # lists name, serial number, firmware and USB type (3.x is best; 2.x works at 640x480 @ 15 Hz)
 
 # 2. Start the ROS camera node (T1)
-ros2 launch custom_package camera_front.launch.py        # /camera/front/color/image_raw, rgb8 640x480 @ 15 Hz, color only
+ros2 launch custom_package camera_front.launch.py        # /camera/front/color/image_raw, rgb8 1280x800 @ 15 Hz (D455), color only
 
 # 3. Check it publishes (T2)
 ros2 topic list | grep camera/front
@@ -210,9 +210,13 @@ ros2 topic echo --once /camera/front/color/camera_info --field width   # 640
 (`rqt_image_view` is not installed in the container; `apt install ros-jazzy-rqt-image-view` adds it, then
 `ros2 run rqt_image_view rqt_image_view /camera/front/color/image_raw`.)
 Without ROS at all: stop the camera launch and run `realsense-viewer`.
-With two RealSense cameras attached, pick one by serial: `camera_front.launch.py serial_no:=_<serial>` (note the leading `_`).
+Two RealSense cameras are attached since 2026-11-22: D455 above the table (front, serial 207322250030, the default of
+`camera_front.launch.py`) and D435 on the gripper (wrist, 927522071177). Both at once: `ros2 launch custom_package cameras.launch.py`
+(→ `/camera/front/color/image_raw` + `/camera/wrist/color/image_raw`; `depth:=true` adds the front depth). Another camera:
+`serial_no:=_<serial>` / `front_serial:=` / `wrist_serial:=` (note the leading `_`).
 
-There is no wrist camera yet: `wrist_image_topic: ""` sends black frames for that view. To run the bridge without any camera,
+`vla_bridge.yaml` now uses the wrist camera (`wrist_image_topic: /camera/wrist/color/image_raw`); for a policy trained without
+wrist images pass `-p wrist_image_topic:=""` (black frames, as in its training data). To run the bridge without any camera,
 add `-p fake_images:=true`. To check what the model receives while the bridge runs: in RViz **Add → By topic →**
 `/vla_bridge/model_input/front` **→ Image** (the exact 224×224 image sent), `s` in the bridge shows `image_age_ms`, and `fake_policy_server.py --save-images <dir>`
 on the server saves the received images as PNG and logs their shape every 5 s.

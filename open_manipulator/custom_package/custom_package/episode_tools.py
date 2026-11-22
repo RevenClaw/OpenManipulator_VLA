@@ -29,7 +29,7 @@ DEFAULT_MIN_RATES = {
     '/joint_states': 50.0,
     '/teleop/action': 20.0,
     '/camera/front/color/image_raw': 12.0,
-    '/camera/wrist/image_raw': 12.0,
+    '/camera/wrist/color/image_raw': 12.0,
 }
 
 

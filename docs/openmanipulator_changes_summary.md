@@ -101,6 +101,22 @@ This document provides a complete, itemized technical record of all modification
    * No workspace box any more (2026-11-21): `workspace_x` / `workspace_y` removed (still present in older yamls, ignored). A cube is
      pickable if the arm can reach it: `demo_planning.cube_reachable` (IK for the grasp point and 7 cm above it at some pitch in
      `min_pitch_deg..max_pitch_deg`); e.g. a cube beside the base at x -0.04, y 0.20 is now offered.
+   * Two cameras (2026-11-22, not yet tested on hardware): D455 above the table = front, D435 on the gripper = wrist. New
+     `launch/cameras.launch.py` starts both by serial number (`front_serial` _207322250030, `wrist_serial` _927522071177, each in a
+     scoped group so `rs_launch.py` arguments don't leak; `depth:=true` for the front, `wrist:=false` = front only);
+     `camera_front.launch.py` defaults to the D455's serial (no more "first device"); `pick_place_test.launch.py` uses
+     `cameras.launch.py` (`wrist` argument). Wrist topic = `/camera/wrist/color/image_raw` (was the placeholder
+     `/camera/wrist/image_raw`): set in `record_episodes.yaml`, `guided_demo.yaml`, `vla_bridge.yaml`, the `record_episodes`
+     default, `episode_tools` rates. `scripted_demo` keeps `wrist_topic: ""` by default. The new front camera needs a new
+     `calibrate_camera` run and `table_z`.
+   * Front resolution (2026-11-22, not yet tested on hardware): D455 color 1280×800 (was 640×480) and depth 848×480, still 15 fps. Depth
+     1280×720 was tried first: its ~52 cm minimum distance gave the cube tops (0.49 m from the camera) 4 % valid pixels → "no depth";
+     848×480 has ~35 cm (`color_profile` / `depth_profile` in `camera_front.launch.py` and `cameras.launch.py`). The wrist D435
+     stays 640×480 (`wrist_profile`; it is on USB 2). Intrinsics come live from `camera_info`, so detection and calibration are
+     unaffected; the policy still gets 224×224. Episodes are ~3× larger on disk.
+   * Front colour settings (2026-11-22, not yet tested on hardware): `config/camera_front.yaml` (flat `rgb_camera.*` parameters:
+     auto exposure / white balance, brightness, contrast, saturation, gamma, sharpness, power line frequency), passed to
+     `rs_launch.py`'s `config_file` via the `color_config` argument of `camera_front.launch.py` / `cameras.launch.py`.
    * Gripper polarity (2026-11-19, known issue #15): this arm's gripper is inverted w.r.t. ROBOTIS's convention. Fixed in the real-hardware driver
      config: servo 15's `[unit info]` in `open_manipulator_x_position.ros2_control.xacro` is mirrored (factor negated, offset 0.045099321), so
      everything above the driver (and mock hardware) keeps the stock +0.019 open / −0.010 close.

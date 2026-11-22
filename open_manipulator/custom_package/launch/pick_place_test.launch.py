@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 #
-# Camera (with aligned depth) + object_detector for the pick-and-place pipeline test, one command instead of two terminals:
+# Cameras (front D455 with aligned depth + wrist D435, cameras.launch.py) + object_detector for the pick-and-place pipeline
+# test and the demos, one command instead of two terminals:
 #   ros2 launch custom_package pick_place_test.launch.py
 #   ros2 launch custom_package pick_place_test.launch.py targets:="19:blue marker,25:green marker"     # the defaults
+#   ros2 launch custom_package pick_place_test.launch.py wrist:=false     # front camera only
 # targets = comma-separated "<AprilTag id>:<name>"; the names are what config/pick_place_test.yaml's color_targets refers to.
 # Start the arm launch and scripted_demo separately (they read the keyboard): docs/finetuning_procedure.md, section 6.
 #
@@ -34,11 +36,12 @@ def generate_launch_description():
     share = get_package_share_directory('custom_package')
     return LaunchDescription([
         DeclareLaunchArgument('model_path', default_value='/workspace/models/yolo_cubes.pt'),
+        DeclareLaunchArgument('wrist', default_value='true', description='false: no wrist camera'),
         DeclareLaunchArgument('targets', default_value='19:blue marker,25:green marker',
                               description='comma-separated "<AprilTag id>:<name>" target tags'),
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(share, 'launch', 'camera_front.launch.py')),
-            launch_arguments={'depth': 'true'}.items(),
+            PythonLaunchDescriptionSource(os.path.join(share, 'launch', 'cameras.launch.py')),
+            launch_arguments={'depth': 'true', 'wrist': LaunchConfiguration('wrist')}.items(),
         ),
         OpaqueFunction(function=detector),
     ])

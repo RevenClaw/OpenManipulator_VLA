@@ -68,7 +68,7 @@ class EpisodeRecorder(Node):
         self.declare_parameter('state_topic', '/joint_states')
         self.declare_parameter('action_topic', '/teleop/action')
         self.declare_parameter('front_topic', '/camera/front/color/image_raw')
-        self.declare_parameter('wrist_topic', '/camera/wrist/image_raw')  # '' = no wrist camera
+        self.declare_parameter('wrist_topic', '/camera/wrist/color/image_raw')  # '' = no wrist camera
         self.declare_parameter('extra_topics', [''])            # also recorded, not checked (e.g. /leader/joint_states)
         self.declare_parameter('min_rate_state', 50.0)          # Hz
         self.declare_parameter('min_rate_action', 20.0)

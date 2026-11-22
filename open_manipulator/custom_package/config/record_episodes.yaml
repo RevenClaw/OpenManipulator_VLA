@@ -10,7 +10,7 @@ record_episodes:
     state_topic: "/joint_states"
     action_topic: "/teleop/action"    # JointState joint1..4 (rad) + "gripper" (0 open..1 closed), published by the teleop node
     front_topic: "/camera/front/color/image_raw"
-    wrist_topic: ""                   # "/camera/wrist/image_raw" once the wrist camera exists
+    wrist_topic: "/camera/wrist/color/image_raw"   # D435 on the gripper (cameras.launch.py); "" = no wrist camera
     extra_topics: [""]                # recorded too, not checked, e.g. ["/leader/joint_states"]
     min_rate_state: 50.0              # Hz
     min_rate_action: 20.0

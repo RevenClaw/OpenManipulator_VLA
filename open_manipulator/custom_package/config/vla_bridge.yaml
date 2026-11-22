@@ -25,8 +25,8 @@ vla_bridge:
     # Cameras. Each frame is converted to RGB 224x224 (resize_with_pad) when an observation is built; the exact images
     # sent are republished on /vla_bridge/model_input/<front|wrist>. A topic of "" means no camera for that view: it
     # gets black frames and no staleness check. fake_images: true makes both views black (no cameras needed).
-    front_image_topic: "/camera/front/color/image_raw"   # RealSense D435: ros2 launch custom_package camera_front.launch.py
-    wrist_image_topic: ""                                # no wrist camera yet
+    front_image_topic: "/camera/front/color/image_raw"   # D455 above the table: ros2 launch custom_package cameras.launch.py
+    wrist_image_topic: "/camera/wrist/color/image_raw"   # D435 on the gripper. "" = black frames (a policy trained without wrist images)
     fake_images: false
 
     shadow: false                     # true: publish to /vla_bridge/preview only, the arm does not move

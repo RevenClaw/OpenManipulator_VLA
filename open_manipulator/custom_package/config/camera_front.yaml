@@ -1,0 +1,27 @@
+# Colour settings of the front D455 (RGB sensor), loaded by camera_front.launch.py / cameras.launch.py (`color_config`).
+# Flat realsense2_camera parameter names (not the ros__parameters format: rs_launch.py reads this file as a plain dict).
+# The values below are the camera's defaults. To match realsense-viewer: stop the ROS camera launch, open the viewer, adjust
+# RGB Camera -> Controls until you like it, copy the numbers here, rebuild (or edit the installed copy), restart the launch.
+# Live trial without restarting (lost at restart, copy what you keep into this file):
+#   ros2 param set /camera/front rgb_camera.saturation 80
+#   ros2 param set /camera/front rgb_camera.enable_auto_white_balance false
+#   ros2 param set /camera/front rgb_camera.white_balance 4200.0
+#
+# For training data, fixed values are better than auto: with auto exposure / auto white balance the colours drift with the
+# arm's shadow and the room light, and every episode looks slightly different. Once it looks right, set the two enable_auto_*
+# to false and keep exposure / gain / white_balance at the values the auto mode had chosen (`ros2 param get` them first).
+
+rgb_camera.enable_auto_exposure: false
+rgb_camera.exposure: 35              # uncomment with enable_auto_exposure: false (units of 100 us; < 666 at 15 fps)
+rgb_camera.gain: 42                   # uncomment with enable_auto_exposure: false
+rgb_camera.auto_exposure_priority: false   # false = keep 15 fps, never lengthen the frame for exposure
+rgb_camera.backlight_compensation: false
+rgb_camera.enable_auto_white_balance: false
+rgb_camera.white_balance: 4600.0      # K; uncomment with enable_auto_white_balance: false
+rgb_camera.brightness: 1                # -64..64
+rgb_camera.contrast: 51                 # 0..100
+rgb_camera.saturation: 64               # 0..100
+rgb_camera.gamma: 300                   # 100..500
+rgb_camera.hue: 0
+rgb_camera.sharpness: 50                # 0..100
+rgb_camera.power_line_frequency: 3      # 0 off, 1 = 50 Hz, 2 = 60 Hz, 3 = auto. India mains = 50 Hz: set 1 if the image flickers

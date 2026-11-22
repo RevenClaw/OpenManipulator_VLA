@@ -240,15 +240,16 @@ flowchart TD
   time-based 0.3 rad/s speed cap, start-jump check, fingertip ≥ 2 cm, watchdog, connection loss, e-stop) and sends one multi-point
   trajectory per chunk to `arm_controller`; the gripper goes through `GripperCommand` with hysteresis. Starts disabled; any fault holds
   and disables. `shadow:=true` publishes to `/vla_bridge/preview` only. Design: `vla_layer/docs/PHASE3_GUIDE.md`.
-* **Camera input**: front = `/camera/front/color/image_raw` from `realsense2_camera` (launched by `custom_package/launch/camera_front.launch.py`,
-  node `/camera/front`, rgb8 640×480 @ 15 Hz, color only), subscribed with reliable QoS (depth 1); wrist = black frames until a wrist
-  camera exists. Each observation converts the latest frame to RGB 224×224 (`resize_with_pad`) and republishes it on
+* **Camera input**: front = `/camera/front/color/image_raw` (D455 above the table) and wrist = `/camera/wrist/color/image_raw`
+  (D435 on the gripper), both from `realsense2_camera` (launched by `custom_package/launch/cameras.launch.py`, nodes `/camera/front`
+  and `/camera/wrist`, chosen by serial, rgb8 @ 15 Hz: front 1280×800, wrist 640×480), subscribed with reliable QoS (depth 1); `wrist_image_topic: ""` =
+  black wrist frames (policies trained without the wrist view). Each observation converts the latest frame to RGB 224×224 (`resize_with_pad`) and republishes it on
   `/vla_bridge/model_input/front` (`sensor_msgs/Image`, stamped like the camera frame).
 
 ### 8. `record_episodes` (Package: `custom_package`) — *not yet tested on hardware*
 * **Type**: Terminal tool that records teleoperated demonstrations (one rosbag2 episode per demo) for training the VLA policy.
 * **Subscribes** (raw, arrival times only, for freshness checks): `/joint_states`, `/teleop/action`, `/camera/front/color/image_raw`
-  (+ `/camera/wrist/image_raw` when configured). **Spawns** `ros2 bag record` per episode (mcap, zstd_fast) on those topics plus
+  (+ `/camera/wrist/color/image_raw` when `wrist_topic` is set). **Spawns** `ros2 bag record` per episode (mcap, zstd_fast) on those topics plus
   `extra_topics`. **Calls** `/arm_controller/follow_joint_trajectory` (2-stage return to READY), `/gripper_controller/gripper_cmd`
   (open), and optionally `/teleop/enable` (std_srvs/SetBool) to pause/resume teleop.
 * **Writes** `/workspace/recordings/<task>/episode_NNNN/` (bag + `metadata.json`: task, success, duration, grid position, quick check).
@@ -257,7 +258,7 @@ flowchart TD
 ### 9. `object_detector` (Package: `custom_package`) — *not yet tested on hardware*
 * **Type**: Perception node for the scripted demonstrations (3 Hz).
 * **Subscribes**: `/camera/front/color/image_raw` (rgb8), `/camera/front/aligned_depth_to_color/image_raw` (16UC1, from
-  `camera_front.launch.py depth:=true`), `/camera/front/color/camera_info`. Reliable QoS (large frames).
+  `cameras.launch.py depth:=true`), `/camera/front/color/camera_info`. Reliable QoS (large frames).
 * **Does**: YOLO (ultralytics, `/workspace/models/yolo_cubes.pt`, classes red/green/blue) for cubes, OpenCV AprilTag 36h11 for targets;
   depth = median of the box's inner half; pixel + depth → camera point → world via `/workspace/calibration/camera_calibration.yaml`
   (reloaded when it changes); cube centres = visible point moved back by half a cube along the viewing direction.

@@ -72,8 +72,8 @@ zenohd
 # T1 arm: homing menu option 2 (HOME)
 ls -l /dev/serial/by-id/                                     # which ttyUSBx is the U2D2
 ros2 launch custom_package open_manipulator_x_interactive.launch.py port_name:=/dev/ttyUSB0
-# T2 camera with depth aligned to color
-ros2 launch custom_package camera_front.launch.py depth:=true
+# T2 cameras: front D455 with depth aligned to color + wrist D435 (cameras.launch.py, serials inside; front only: wrist:=false)
+ros2 launch custom_package cameras.launch.py depth:=true
 # T3 detector
 ros2 run custom_package object_detector --ros-args --params-file \
     $(ros2 pkg prefix custom_package)/share/custom_package/config/object_detector.yaml
@@ -248,6 +248,10 @@ python scripts/convert_rosbag_to_lerobot.py data/rosbags/scripted_pick_place --d
 ```
 Every episode should be converted, with ~15 Hz front, ~30 Hz action, ~100 Hz state. Two warnings are expected in v1:
 several task strings (several colours), and black wrist frames (no wrist camera yet).
+Since 2026-11-22 there is a wrist camera (D435, `/camera/wrist/color/image_raw`): episodes recorded with `wrist_topic` set contain it.
+For those, drop `--no-wrist` and make sure the converter maps that topic to the wrist view (it was written for
+`/camera/wrist/image_raw`, check `vla_layer`), and train/serve with `wrist_camera=True`. Don't mix episodes with and without the
+wrist view in one dataset; the 80 old `scripted_pick_place` episodes have no wrist view (and a different front camera, the D435).
 
 ---
 
@@ -262,7 +266,7 @@ Quick reference: `docs/custom_commands_guide.md` §12.
 - Same command as §7 with `-p episodes:=0` (until `q`); several sessions are fine (numbering continues).
 - Spread the cubes over the whole workspace each time you reset; vary which colours are left.
 - Same camera, light, tags and bin in every session. Episodes take ~20–35 s; plan ~3 h of robot time for 300.
-- Disk: ~0.4 GB per episode → ~120 GB for 300. Convert and archive in batches if the robot PC's disk is small
+- Disk: ~0.2 GB per episode at 640×480; with the 1280×800 front camera + wrist (since 2026-11-22) ~0.6 GB → ~180 GB for 300. Convert and archive in batches if the robot PC's disk is small
   (`min_free_gb` stops recording at 5 GB free).
 - Every episode's `metadata.json` records the prompt, the cube and target positions, the waypoints, the random variation
   and the checks (`source: scripted`).
@@ -277,7 +281,7 @@ python scripts/convert_rosbag_to_lerobot.py data/rosbags/scripted_pick_place --r
 python scripts/compute_norm_stats.py pi05_omx_lora_scripted_v1
 bash scripts/gpu_check.sh train && python scripts/train.py pi05_omx_lora_scripted_v1 --exp-name=scripted_v1   # in tmux, ~32 h
 ```
-There is no wrist camera: the wrist view is masked out by default (`wrist_camera=False` in `omx_pi05`), so the model ignores it
+Without a wrist camera (all data before 2026-11-22): the wrist view is masked out by default (`wrist_camera=False` in `omx_pi05`), so the model ignores it
 in training and serving. First run `python -m pytest -q tests/test_policy.py` on the A30 (the masking was written on the laptop,
 where openpi isn't installed, so these tests have not run yet).
 Evaluate the 5k/10k/15k checkpoints early (`IMPLEMENTATION_PLAN.md` T6.3).
