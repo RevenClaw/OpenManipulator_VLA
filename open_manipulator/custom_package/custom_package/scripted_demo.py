@@ -114,6 +114,9 @@ class ScriptedDemo(Node):
         dp('cube_size', 0.035)
         dp('bin_height', 0.04)
         dp('release_clearance', 0.015)
+        dp('far_release_extra', 0.0)                            # m more release clearance for far cubes (0 = off), see
+        dp('far_release_start', 0.18)                           # demo_planning.release_extra: ramps from start to full
+        dp('far_release_full', 0.26)                            # (m of cube distance from the base axis)
         dp('max_joint_vel', [0.5, 0.3, 0.6, 0.8])               # rad/s per joint; vla_bridge must allow at least these
         dp('max_pitch_deg', 90.0)
         dp('min_pitch_deg', 30.0)
@@ -156,7 +159,9 @@ class ScriptedDemo(Node):
         self.answers = queue.Queue()  # keyboard lines, while a plan waits for confirmation
         self.awaiting = False
         self.cfg = D.PlanConfig(table_z=p('table_z'), cube_size=p('cube_size'), bin_height=p('bin_height'),
-                                release_clearance=p('release_clearance'), max_joint_vel=tuple(p('max_joint_vel')),
+                                release_clearance=p('release_clearance'), far_release_extra=p('far_release_extra'),
+                                far_release_start=p('far_release_start'), far_release_full=p('far_release_full'),
+                                max_joint_vel=tuple(p('max_joint_vel')),
                                 max_pitch_deg=p('max_pitch_deg'), min_pitch_deg=p('min_pitch_deg'), rate_hz=p('action_rate'))
         seed = int(p('seed'))
         self.rng = np.random.default_rng(None if seed < 0 else seed)
@@ -425,6 +430,13 @@ class ScriptedDemo(Node):
             raise Finished(f'{len(items)} object(s) left but none reachable: {"; ".join(reasons)}')
         raise Aborted(message)
 
+    def metadata_extra(self):
+        """More metadata.json fields (subclasses, e.g. guided_demo's arrangement)."""
+        return {}
+
+    def episode_saved(self, success):
+        """Called after an episode was saved (subclasses: progress, stop conditions)."""
+
     def print_routing(self):
         """Startup check of where each colour goes and which target tags the detector actually reports: a mismatch (a stale config,
         or object_detector started with its default tags) is shown here instead of silently sending objects to the wrong tag."""
@@ -643,13 +655,14 @@ class ScriptedDemo(Node):
                    'place_pitch_deg': round(float(np.degrees(plan.place_pitch)), 1),
                    'waypoints': {k: [round(float(v), 4) for v in w] for k, w in plan.waypoints.items()},
                    'variation': var.asdict(), 'checks': checks,
-                   'planner': {k: v for k, v in vars(self.cfg).items()}})
+                   'planner': {k: v for k, v in vars(self.cfg).items()}, **self.metadata_extra()})
         (path / 'metadata.json').write_text(json.dumps(meta, indent=2) + '\n')
         self.session['success' if success else 'failure'] += 1
         self.session['seconds'] += duration
         verdict = '✅ SUCCESS' if success else '❌ FAILURE (kept, not trained on)'
         detail = '; '.join(f'{k}: {v.get("reason", "ok" if v["ok"] else "failed")}' for k, v in checks.items())
         print(f'  💾  {name} saved: {verdict}' + (f' [{detail}]' if detail else ''))
+        self.episode_saved(success)
         return 'saved'
 
     def trial(self, plan, cube, target_xy, target_id):

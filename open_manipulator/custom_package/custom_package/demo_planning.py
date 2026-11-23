@@ -36,6 +36,12 @@ class PlanConfig:
     cube_size: float = 0.035          # m, edge of the cubes
     bin_height: float = 0.04          # m, rim height of the bins above the table
     release_clearance: float = 0.015  # m, fingertips above the rim when opening
+    # Far cubes (near the front camera) are grasped near their top (reach-dependent height error), so they hang lower in
+    # the gripper: release them higher. Extra clearance ramps linearly from 0 at far_release_start to far_release_extra at
+    # far_release_full (horizontal distance of the CUBE from the base axis, m). 0 = off.
+    far_release_extra: float = 0.0
+    far_release_start: float = 0.18
+    far_release_full: float = 0.26
     # rad/s per joint (j1..j4). joint2 (shoulder) overloads: kept at 0.3. vla_bridge must allow at least these
     # (max_joint_vel_per_joint), or it clips the motions the policy learned.
     max_joint_vel: tuple = (0.5, 0.3, 0.6, 0.8)
@@ -174,12 +180,21 @@ class PlanningError(ValueError):
     pass
 
 
+def release_extra(cube_xy, cfg=PlanConfig()):
+    """Extra release clearance (m) for a cube picked at cube_xy: 0 near the base, far_release_extra far from it."""
+    if cfg.far_release_extra <= 0.0:
+        return 0.0
+    reach = math.hypot(cube_xy[0], cube_xy[1])
+    span = max(cfg.far_release_full - cfg.far_release_start, 1e-6)
+    return cfg.far_release_extra * min(max((reach - cfg.far_release_start) / span, 0.0), 1.0)
+
+
 def plan_pick_place(cube_xy, target_xy, cfg=PlanConfig(), var=Variation(), start=None):
     """Plan one pick-and-place. cube_xy: cube centre (x, y); target_xy: bin centre (x, y). Raises PlanningError."""
     start = np.asarray(READY, float) + np.asarray(var.start_offset, float) if start is None else np.asarray(start, float)
     max_vel = np.asarray(cfg.max_joint_vel, float) * min(var.speed_scale, 1.0)
     z_grasp = cfg.table_z + cfg.cube_size / 2 + var.grasp_dz
-    z_release = cfg.table_z + cfg.bin_height + cfg.release_clearance
+    z_release = cfg.table_z + cfg.bin_height + cfg.release_clearance + release_extra(cube_xy, cfg)
     cx, cy = cube_xy
     bx, by = target_xy
     pre = (cx, cy, z_grasp + var.approach_height)

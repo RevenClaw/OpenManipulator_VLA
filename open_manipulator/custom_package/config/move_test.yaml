@@ -11,6 +11,9 @@ move_test:
     cube_size: 0.035                  # m (pp: grasp at table_z + cube_size/2)
     bin_height: 0.0                   # m (pp: release at table_z + bin_height + release_clearance)
     release_clearance: 0.015
+    far_release_extra: 0.02           # m MORE release clearance for far cubes (near the front camera): they are grasped near their
+    far_release_start: 0.18           # top, so they hang lower. Ramps from 0 at far_release_start to far_release_extra at
+    far_release_full: 0.26            # far_release_full (m, cube distance from the base axis). 0 = off
     max_joint_vel: [0.3, 0.2, 0.4, 0.5]   # rad/s j1..j4: the slow test speeds of pick_place_test.yaml
     max_pitch_deg: 90.0
     min_pitch_deg: 30.0

@@ -117,6 +117,17 @@ This document provides a complete, itemized technical record of all modification
    * Front colour settings (2026-11-22, not yet tested on hardware): `config/camera_front.yaml` (flat `rgb_camera.*` parameters:
      auto exposure / white balance, brightness, contrast, saturation, gamma, sharpness, power line frequency), passed to
      `rs_launch.py`'s `config_file` via the `color_config` argument of `camera_front.launch.py` / `cameras.launch.py`.
+   * New dataset + arrangements (2026-11-23, not yet tested on hardware): the 80 `scripted_pick_place` episodes (no wrist view)
+     were deleted; `guided_demo` records to `pick_place_2cam`. `arrangement` parameter: one fixed cube → bin permutation per
+     session, folder `<dataset>/arr_1to2_2to3_3to1` etc.; "" = startup menu with all 6 and progress (`count_episodes`),
+     "231" = fixed, "free" = old behaviour. With an arrangement only the cube is chosen; the session stops after
+     `episodes_per_arrangement` (10) successful episodes. Pure helpers `parse_arrangement`, `arrangement_folder`,
+     `all_arrangements`, `count_episodes` (tests in `test_guided_demo.py`); `scripted_demo` gained the hooks
+     `metadata_extra()` / `episode_saved()`.
+   * Higher release for far cubes (2026-11-23, not yet tested on hardware): cubes far from the base (= near the front camera)
+     are grasped near their top and hang lower, so `demo_planning.release_extra` adds clearance that ramps from 0 at
+     `far_release_start` (0.18 m cube distance from the base axis) to `far_release_extra` at `far_release_full` (0.26 m).
+     `PlanConfig` default 0 (off; scripted_demo / pick_place_test unchanged); `guided_demo.yaml` and `move_test.yaml`: 0.02 m.
    * Gripper polarity (2026-11-19, known issue #15): this arm's gripper is inverted w.r.t. ROBOTIS's convention. Fixed in the real-hardware driver
      config: servo 15's `[unit info]` in `open_manipulator_x_position.ros2_control.xacro` is mirrored (factor negated, offset 0.045099321), so
      everything above the driver (and mock hardware) keeps the stock +0.019 open / −0.010 close.

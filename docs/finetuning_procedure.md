@@ -259,7 +259,7 @@ wrist view in one dataset; the 80 old `scripted_pick_place` episodes have no wri
 `ros2 run custom_package guided_demo --ros-args --params-file $(ros2 pkg prefix custom_package)/share/custom_package/config/guided_demo.yaml`
 lists the detected cubes and the bins (tags 25 red, 20 green, 18 blue; `bins` parameter), asks which cube and which bin, builds
 the prompt from that ("pick up the {color} cube and place it in the {target}") and records the episode exactly like `scripted_demo`
-(same planning, checks, metadata; dataset `guided_pick_place`). Use it to control the mix of colour/bin combinations in the data.
+(same planning, checks, metadata; dataset `pick_place_2cam` since 2026-11-23, front D455 + wrist D435). Use it to control the mix of colour/bin combinations in the data.
 Quick reference: `docs/custom_commands_guide.md` §12.
 
 ## 8. Bulk recording: ~200–300 episodes

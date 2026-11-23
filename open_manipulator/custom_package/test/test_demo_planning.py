@@ -176,3 +176,19 @@ def test_cube_reachable():
     cfg = D.PlanConfig(table_z=-0.056, cube_size=0.035)
     assert D.cube_reachable((0.20, 0.0), cfg) and D.cube_reachable((-0.037, 0.204), cfg) and D.cube_reachable((0.0, -0.2), cfg)
     assert not D.cube_reachable((0.45, 0.0), cfg) and not D.cube_reachable((0.43, -0.23), cfg)
+
+
+def test_release_extra_ramps_with_cube_distance():
+    cfg = D.PlanConfig(far_release_extra=0.02, far_release_start=0.18, far_release_full=0.26)
+    assert D.release_extra((0.15, 0.0), cfg) == 0.0
+    assert abs(D.release_extra((0.22, 0.0), cfg) - 0.01) < 1e-9
+    assert abs(D.release_extra((0.0, 0.30), cfg) - 0.02) < 1e-9           # capped, any direction
+    assert D.release_extra((0.30, 0.0), D.PlanConfig()) == 0.0           # off by default
+
+
+def test_far_cube_is_released_higher():
+    cfg = D.PlanConfig(table_z=-0.056, bin_height=0.0, far_release_extra=0.02)
+    near = D.plan_pick_place((0.15, 0.05), (0.12, -0.16), cfg)
+    far = D.plan_pick_place((0.26, 0.0), (0.12, -0.16), cfg)
+    assert abs(far.waypoints['release'][2] - near.waypoints['release'][2] - 0.02) < 1e-6
+    assert abs(near.waypoints['release'][2] - (-0.056 + 0.015)) < 1e-6

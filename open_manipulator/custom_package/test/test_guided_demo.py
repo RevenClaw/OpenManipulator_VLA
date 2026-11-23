@@ -1,5 +1,7 @@
 """Unit tests for guided_demo's pure helpers (needs the ROS env for the imports): python3 -m pytest test/test_guided_demo.py"""
 
+import json
+
 import pytest
 
 pytest.importorskip('rclpy')
@@ -32,3 +34,27 @@ def test_parse_choice():
     assert G.parse_choice('2', 3) == 1
     assert G.parse_choice(' 3 ', 3) == 2
     assert G.parse_choice('0', 3) is None and G.parse_choice('4', 3) is None and G.parse_choice('r', 3) is None
+
+
+def test_parse_arrangement_only_permutations():
+    assert G.parse_arrangement('231') == (1, 2, 0)
+    assert G.parse_arrangement(' 123 ') == (0, 1, 2)
+    assert G.parse_arrangement('221') is None and G.parse_arrangement('12') is None and G.parse_arrangement('abc') is None
+    assert G.parse_arrangement('124') is None
+
+
+def test_arrangement_folders_six_distinct():
+    perms = G.all_arrangements(3)
+    assert len(perms) == 6
+    assert G.arrangement_folder((1, 2, 0)) == 'arr_1to2_2to3_3to1'
+    assert len({G.arrangement_folder(p) for p in perms}) == 6
+    assert all(G.parse_arrangement(''.join(str(j + 1) for j in p)) == p for p in perms)
+
+
+def test_count_episodes(tmp_path):
+    for i, ok in enumerate([True, False, True]):
+        (tmp_path / f'episode_{i:04d}').mkdir()
+        (tmp_path / f'episode_{i:04d}' / 'metadata.json').write_text(json.dumps({'success': ok}))
+    (tmp_path / 'episode_0003').mkdir()  # no metadata yet: not counted
+    assert G.count_episodes(tmp_path) == (3, 2)
+    assert G.count_episodes(tmp_path / 'missing') == (0, 0)

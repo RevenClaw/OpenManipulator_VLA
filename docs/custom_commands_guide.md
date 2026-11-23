@@ -178,13 +178,34 @@ The episodes record the front D455 **and** the wrist D435 (`wrist_topic: /camera
 lists every cube it sees and asks which one to pick and which bin to put it in; the prompt is built from your choice
 ("pick up the blue cube and place it in the red bin") and the episode is executed and recorded like §11.
 Bins = AprilTags: **25 = red bin, 20 = green bin, 18 = blue bin** (`bins` in `config/guided_demo.yaml`). Episodes go to
-`/workspace/recordings/guided_pick_place/`.
+`/workspace/recordings/pick_place_2cam/` (since 2026-11-23; the earlier `guided_pick_place/` trial episodes and the 80 `scripted_pick_place` episodes without wrist view were deleted).
 
 ```bash
 ros2 run custom_package guided_demo --ros-args --params-file \
     $(ros2 pkg prefix custom_package)/share/custom_package/config/guided_demo.yaml
 #   -p record:=false    run the motions without recording (trials)
 ```
+**Arrangements (since 2026-11-23):** each session records one fixed cube → bin assignment into its own folder,
+`pick_place_2cam/arr_<cube>to<bin>_...` (cubes 1 red, 2 green, 3 blue; bins 1 = tag 25 red, 2 = tag 20 green, 3 = tag 18 blue).
+At startup a menu lists all 6 with their progress; you pick one, then only choose the cube (its bin follows). After
+`episodes_per_arrangement` (10) successful episodes the session stops; restart for the next arrangement.
+
+| # | Folder | red → | green → | blue → |
+|---|---|---|---|---|
+| 1 | `arr_1to1_2to2_3to3` | red bin | green bin | blue bin |
+| 2 | `arr_1to1_2to3_3to2` | red bin | blue bin | green bin |
+| 3 | `arr_1to2_2to1_3to3` | green bin | red bin | blue bin |
+| 4 | `arr_1to2_2to3_3to1` | green bin | blue bin | red bin |
+| 5 | `arr_1to3_2to1_3to2` | blue bin | red bin | green bin |
+| 6 | `arr_1to3_2to2_3to1` | blue bin | green bin | red bin |
+
+Far cubes (near the front camera) are grasped near their top, so they are released higher: up to `far_release_extra` (2 cm)
+more than `release_clearance`, ramping between 18 and 26 cm cube distance from the base (`guided_demo.yaml`; 0 = off).
+The 🎯 line's `release aim` shows the height actually used.
+
+Skip the menu: `-p arrangement:=231` (bin number for cube 1, 2, 3 = row 4). Old free choice: `-p arrangement:=free`.
+`metadata.json` gets `arrangement` and `arrangement_map`.
+
 At the prompts: number = choose, `r` = look again, `b` = back, `q` = quit; ENTER on the 🎯 line runs it. Just before running it
 re-checks that the cube is still there (follows it if it moved ≤ 3 cm). Cubes already in a bin are marked `[already in the … bin]`.
 A bin whose tag the camera has never seen can't be chosen; a covered tag keeps its last seen position.

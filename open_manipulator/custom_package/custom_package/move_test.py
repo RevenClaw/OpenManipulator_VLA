@@ -168,7 +168,7 @@ class MoveTest(S.ScriptedDemo):
             print(f'        {name:13s} x {w[0]:.3f}  y {w[1]:+.3f}  z {w[2]:+.3f}  pitch {np.degrees(w[3]):.0f}°')
         print(f'        {plan.duration:.1f} s; heights: table_z {self.cfg.table_z:+.3f} + cube_size/2 '
               f'{self.cfg.cube_size / 2:.4f} (grasp), + bin_height {self.cfg.bin_height:.3f} + release_clearance '
-              f'{self.cfg.release_clearance:.3f} (release)')
+              f'{self.cfg.release_clearance:.3f} + far-cube extra {D.release_extra(cube_xy, self.cfg):.3f} (release)')
         if input('  ❓  ENTER = run it (READY first), anything else = cancel: ').strip():
             print('  ↩️   cancelled')
             return

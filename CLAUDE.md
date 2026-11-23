@@ -50,7 +50,8 @@ Keep these docs updated when behaviour changes (the user expects it; issue #6 is
     `remember_targets`, `place_offsets` in `scripted_demo`): counts the objects, retries failed picks (≤ 3 per object, ≤ objects × 3 in
     total), backs out after a failed grasp, keeps a covered tag's last position, drops successive objects 5 cm apart around the tag.
     `guided_demo.py` + `config/guided_demo.yaml`: same pipeline, but the operator chooses cube + bin from a list (bins = tags 25 red,
-    20 green, 18 blue), prompt built from the choice, then recorded (dataset `guided_pick_place`). Subclass of `ScriptedDemo`.
+    20 green, 18 blue), prompt built from the choice, then recorded (dataset `pick_place_2cam`, front + wrist camera;
+    `arrangement`: one fixed cube→bin permutation per session in `arr_1to2_2to3_3to1`-style subfolders, startup menu, 10 each). Subclass of `ScriptedDemo`.
     `move_test.py` + `config/move_test.yaml`: typed fingertip goals (`x y z [pitch] [o|c]`, `pp cx cy bx by`) through the same motion
     code, no camera (tests the moving half alone).
     Before every pick (all modes) it checks the gripper measures open (`check_gripper_open`, ±`gripper_open_tolerance` 0.004 m), else pauses.

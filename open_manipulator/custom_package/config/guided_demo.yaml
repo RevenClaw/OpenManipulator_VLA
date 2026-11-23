@@ -7,7 +7,8 @@
 guided_demo:
   ros__parameters:
     # Dataset
-    dataset: "guided_pick_place"      # -> /workspace/recordings/guided_pick_place/episode_NNNN
+    dataset: "pick_place_2cam"        # -> /workspace/recordings/pick_place_2cam/episode_NNNN: front D455 1280x800 + wrist D435,
+                                      # from 2026-11-23 (the earlier guided_pick_place trial episodes were deleted)
     data_dir: "/workspace/recordings"
     record: true                      # false = trial mode
     episodes: 0                       # stop after this many saved episodes (0 = until q)
@@ -17,6 +18,10 @@ guided_demo:
     bins: ["25:red bin", "20:green bin", "18:blue bin"]   # "<AprilTag id>:<name in the prompt>", listed in this order
     colors: ["red", "green", "blue"]  # YOLO classes listed as cubes
     prompt_template: "pick up the {color} cube and place it in the {target}"   # {color} = cube, {target} = bin name
+    arrangement: ""                   # fixed cube -> bin per session, its own folder <dataset>/arr_..: "" = menu at startup (all 6
+                                      # with progress), "231" = red(1) -> bin 2, green(2) -> bin 3, blue(3) -> bin 1, "free" = any
+                                      # cube to any bin, saved in <dataset>/ itself. Cubes numbered in `colors`, bins in `bins` order
+    episodes_per_arrangement: 10      # successful episodes per arrangement folder; reached = the session stops (0 = no limit)
     recheck_max_move: 0.03            # m: the chosen cube may have moved this much before the run (the plan follows it)
     confirm: false                    # the menu already asks before every run
     until_clear: false
@@ -44,6 +49,9 @@ guided_demo:
     cube_size: 0.035                  # m (object_detector.yaml: object_size should match)
     bin_height: 0.0                   # m, rim height of the bins (0 = flat marker); measure it for real trays/bins
     release_clearance: 0.015          # m above the rim when opening (same value as scripted_demo.yaml / pick_place_test.yaml)
+    far_release_extra: 0.02           # m MORE release clearance for far cubes (near the front camera): they are grasped near their
+    far_release_start: 0.18           # top, so they hang lower. Ramps from 0 at far_release_start to far_release_extra at
+    far_release_full: 0.26            # far_release_full (m, cube distance from the base axis). 0 = off
     target_xy_offset: [0.0, 0.0]      # m from a bin's AprilTag to the drop point (0 if the tag is at the bin centre)
     place_offsets: [0.0, 0.0]         # [dx0, dy0, dx1, dy1, ...]: successive drops into the same bin, cycling (0 0 = centre)
     remember_targets: true

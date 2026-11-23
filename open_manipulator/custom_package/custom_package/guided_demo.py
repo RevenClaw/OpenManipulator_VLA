@@ -11,6 +11,12 @@
 #   3. builds the prompt from your choice, e.g. "pick up the blue cube and place it in the red bin", shows the plan
 #   4. ENTER: re-checks that the cube is still where it was, then runs (and records) the episode like scripted_demo
 #
+# Arrangements (`arrangement` parameter): a fixed cube -> bin assignment per session, each in its own folder. Cubes are
+# numbered in `colors` order (red 1, green 2, blue 3), bins in `bins` order (tag 25 red 1, 20 green 2, 18 blue 3).
+# "231" = cube 1 -> bin 2, cube 2 -> bin 3, cube 3 -> bin 1, saved in <dataset>/arr_1to2_2to3_3to1/. With an arrangement you
+# only choose the cube; its bin follows. arrangement "" = a menu at startup with all 6 and their progress (successful
+# episodes / `episodes_per_arrangement`); "free" = the old free choice of cube and bin, saved in <dataset>/ itself.
+#
 # Bin positions come from every AprilTag the detector sees (its `tags` output), so the detector's own `target_tags` don't
 # matter here. A bin whose tag is covered keeps its last seen position.
 #
@@ -23,7 +29,10 @@
 #   ... -p record:=false          # trial mode: run the motions, record nothing
 #
 
+import itertools
+import json
 import math
+import pathlib
 import queue
 import time
 
@@ -61,6 +70,38 @@ def match_cube(cube, objects, max_dist=0.03):
     return min(same, key=lambda o: math.dist(o['xyz'][:2], cube['xyz'][:2])) if same else None
 
 
+def parse_arrangement(text, count=3):
+    """'231' (bin number for cube 1, 2, 3, ...) -> (1, 2, 0) as 0-based bin indices; None unless a permutation of 1..count."""
+    text = str(text).strip()
+    if len(text) != count or not text.isdigit():
+        return None
+    perm = tuple(int(c) - 1 for c in text)
+    return perm if sorted(perm) == list(range(count)) else None
+
+
+def arrangement_folder(perm):
+    """(1, 2, 0) -> 'arr_1to2_2to3_3to1'."""
+    return 'arr_' + '_'.join(f'{i + 1}to{j + 1}' for i, j in enumerate(perm))
+
+
+def all_arrangements(count=3):
+    """Every cube -> bin assignment (each bin used once), in a fixed order: (0, 1, 2), (0, 2, 1), ..."""
+    return list(itertools.permutations(range(count)))
+
+
+def count_episodes(folder):
+    """(saved, successful) episodes in a dataset folder, from their metadata.json."""
+    saved = success = 0
+    for meta in pathlib.Path(folder).glob('episode_*/metadata.json'):
+        try:
+            ok = json.loads(meta.read_text()).get('success', False)
+        except (OSError, ValueError):
+            continue
+        saved += 1
+        success += bool(ok)
+    return saved, success
+
+
 def parse_choice(answer, count):
     """'2' -> index 1 if 1 <= 2 <= count, else None."""
     answer = answer.strip()
@@ -76,6 +117,10 @@ class GuidedDemo(S.ScriptedDemo):
         super().__init__('guided_demo')
         self.declare_parameter('bins', ['25:red bin', '20:green bin', '18:blue bin'])  # "<AprilTag id>:<name in the prompt>"
         self.declare_parameter('recheck_max_move', 0.03)   # m: the chosen cube may have moved this much before the run
+        self.declare_parameter('arrangement', '')          # '' = choose at startup, 'free' = any cube to any bin, '231' = fixed
+        self.declare_parameter('episodes_per_arrangement', 10)  # successful episodes per arrangement folder (then it stops)
+        self.base_dir = self.data_dir
+        self.arrangement = None  # tuple: cube index -> bin index, or None = free choice
         self.bins = parse_bins(self.p('bins'))
         self.bin_ids = {tag for tag, _ in self.bins}
         self.bin_seen = {}  # tag id -> last seen world xyz (a placed cube can cover the tag)
@@ -124,12 +169,17 @@ class GuidedDemo(S.ScriptedDemo):
         bins_xy = {name: xyz[:2] for _, name, xyz, _ in bins if xyz}
         grasp_z = self.cfg.table_z + self.cfg.cube_size / 2               # what the plan aims for (± grasp_dz variation)
         release_z = self.cfg.table_z + self.cfg.bin_height + self.cfg.release_clearance
+        far = (f' + up to {self.cfg.far_release_extra * 100:.1f} cm for cubes {self.cfg.far_release_start * 100:.0f}-'
+               f'{self.cfg.far_release_full * 100:.0f} cm from the base' if self.cfg.far_release_extra > 0 else '')
         print(f'\n  🧊  Cubes on the table (aim z = table_z {self.cfg.table_z:+.3f} + cube_size/2; the camera z is not used):')
         if not cubes:
             print('        (no reachable cube detected)')
         for i, c in enumerate(cubes, 1):
             inside = cube_in_bin(c['xyz'][:2], bins_xy, self.p('target_radius'))
-            print(f'     {i:2d}  {c["label"]:6s} x {c["xyz"][0]:.3f}  y {c["xyz"][1]:+.3f}  z {c["xyz"][2]:+.3f} (camera, centre)'
+            goes = self.arranged_bin(c, bins)
+            arrow = f' → {goes[1]:10s}' if goes else ''
+            print(f'     {i:2d}  {c["label"]:6s}{arrow} x {c["xyz"][0]:.3f}  y {c["xyz"][1]:+.3f}  '
+                  f'z {c["xyz"][2]:+.3f} (camera, centre)'
                   f'  aim z {grasp_z:+.3f}  conf {c["confidence"]:.2f}'
                   + (f'   [already in the {inside}]' if inside else ''))
         shown = [(o, why) for o, why in ignored if why != 'colour not used']
@@ -138,7 +188,7 @@ class GuidedDemo(S.ScriptedDemo):
             for o, why in shown:
                 pos = (f'x {o["xyz"][0]:+.3f}  y {o["xyz"][1]:+.3f}  z {o["xyz"][2]:+.3f}' if o.get('xyz') else ' ' * 30)
                 print(f'          {o["label"]:6s} {pos}  conf {o["confidence"]:.2f}   {why}')
-        print(f'  🗑️   Bins (tag z = table surface as the camera sees it; drop aim z {release_z:+.3f}):')
+        print(f'  🗑️   Bins (tag z = table surface as the camera sees it; drop aim z {release_z:+.3f}{far}):')
         for i, (tag, name, xyz, status) in enumerate(bins, 1):
             pos = f'x {xyz[0]:.3f}  y {xyz[1]:+.3f}  z {xyz[2]:+.3f} (camera)' if xyz else ' ' * 37
             print(f'     {i:2d}  {name:12s} tag {tag:<3d} {pos}  {"✅" if status == "visible" else "⚠️ "} {status}')
@@ -148,12 +198,73 @@ class GuidedDemo(S.ScriptedDemo):
         det = self.fresh_detections(timeout=3.0)
         if det is None:
             print('  ⚠️  No detections yet (is object_detector running?).')
+            self.choose_arrangement()
             return
         if not det.get('calibrated', True):
             print('  ⚠️  The camera is not calibrated: positions are unusable. Run calibrate_camera first.')
         print('  🗺️  Bins (AprilTag → name used in the prompt):')
         for tag, name, xyz, status in self.bin_positions(det):
             print(f'        tag {tag:<3d} → "{name}"  {"✅" if status == "visible" else "⚠️ "} {status}')
+        self.choose_arrangement()
+
+    # ------------------------------------------------------------------ arrangements (fixed cube -> bin per folder)
+    def describe(self, perm):
+        return ', '.join(f'{self.colors[i]} → {self.bins[j][1]}' for i, j in enumerate(perm))
+
+    def choose_arrangement(self):
+        setting = str(self.p('arrangement')).strip().lower()
+        if setting == 'free':
+            print(f'  🔀  Free choice of cube and bin, saving to {self.data_dir}')
+            return
+        count = min(len(self.colors), len(self.bins))
+        if count < 2:
+            print('  ⚠️  Arrangements need >= 2 colours and bins: free choice.')
+            return
+        perm = parse_arrangement(setting, count) if setting else None
+        if setting and perm is None:
+            print(f'  ⚠️  arrangement "{setting}" is not a permutation of 1..{count} (e.g. "231").')
+        target = int(self.p('episodes_per_arrangement'))
+        while perm is None:
+            options = all_arrangements(count)
+            print(f'  📂  Arrangements (cube → bin; cubes {", ".join(f"{i + 1}={c}" for i, c in enumerate(self.colors[:count]))}; '
+                  f'bins {", ".join(f"{i + 1}={n}" for i, (_, n) in enumerate(self.bins[:count]))}):')
+            for k, option in enumerate(options, 1):
+                saved, ok = count_episodes(self.base_dir / arrangement_folder(option))
+                done = '✅' if target > 0 and ok >= target else '  '
+                print(f'     {k}  {done} {arrangement_folder(option):20s} {self.describe(option):55s} '
+                      f'{ok:2d}/{target} ok ({saved} saved)')
+            answer = self.ask(f'  ❓  Record which arrangement? 1-{len(options)}, q = quit').strip()
+            if answer == 'q':
+                self.quit_requested = True
+                return
+            k = parse_choice(answer, len(options))
+            perm = options[k] if k is not None else None
+        self.arrangement = perm
+        self.data_dir = self.base_dir / arrangement_folder(perm)
+        saved, ok = count_episodes(self.data_dir)
+        print(f'  📂  Arrangement {arrangement_folder(perm)}: {self.describe(perm)}')
+        print(f'      saving to {self.data_dir}  ({ok}/{target} successful so far, {saved} saved)')
+
+    def arranged_bin(self, cube, bins):
+        """The bin entry the arrangement assigns to this cube's colour, or None."""
+        if self.arrangement is None or cube['label'] not in self.colors[:len(self.arrangement)]:
+            return None
+        return bins[self.arrangement[self.colors.index(cube['label'])]]
+
+    def metadata_extra(self):
+        if self.arrangement is None:
+            return {}
+        return {'arrangement': arrangement_folder(self.arrangement), 'arrangement_map': self.describe(self.arrangement)}
+
+    def episode_saved(self, success):
+        if self.arrangement is None:
+            return
+        saved, ok = count_episodes(self.data_dir)
+        target = int(self.p('episodes_per_arrangement'))
+        print(f'  📂  {arrangement_folder(self.arrangement)}: {ok}/{target} successful ({saved} saved)')
+        if target > 0 and ok >= target:
+            print(f'  🏁  {target} successful episodes in this arrangement: done. Restart guided_demo for the next one.')
+            self.quit_requested = True
 
     # ------------------------------------------------------------------ the task, chosen by the operator
     def choose_task(self, det):
@@ -161,6 +272,10 @@ class GuidedDemo(S.ScriptedDemo):
             det = self.fresh_detections() or det
             cubes, ignored = self.screen(det)
             bins = self.bin_positions(det)
+            if self.arrangement is not None:
+                used = set(self.colors[:len(self.arrangement)])
+                ignored = list(ignored) + [(c, 'colour not in this arrangement') for c in cubes if c['label'] not in used]
+                cubes = [c for c in cubes if c['label'] in used]
             self.print_scene(cubes, bins, ignored)
             if not cubes:
                 if self.ask('  ❓  ENTER = look again, q = quit').strip() == 'q':
@@ -174,13 +289,17 @@ class GuidedDemo(S.ScriptedDemo):
                 continue
             cube = cubes[i]
 
-            answer = self.ask(f'  ❓  Place the {cube["label"]} cube in which bin? 1-{len(bins)}, b = back, q = quit').strip()
-            if answer == 'q':
-                raise Quit()
-            j = parse_choice(answer, len(bins))
-            if j is None:
-                continue
-            tag, name, xyz, status = bins[j]
+            if self.arrangement is not None:
+                tag, name, xyz, status = self.arranged_bin(cube, bins)
+                print(f'  ➡️   {cube["label"]} cube → {name} (arrangement {arrangement_folder(self.arrangement)})')
+            else:
+                answer = self.ask(f'  ❓  Place the {cube["label"]} cube in which bin? 1-{len(bins)}, b = back, q = quit').strip()
+                if answer == 'q':
+                    raise Quit()
+                j = parse_choice(answer, len(bins))
+                if j is None:
+                    continue
+                tag, name, xyz, status = bins[j]
             if xyz is None:
                 print(f'  ⚠️  The {name} (tag {tag}) has never been seen: put the tag in the camera view.')
                 continue
@@ -235,6 +354,8 @@ class GuidedDemo(S.ScriptedDemo):
         return True  # the operator already confirmed in choose_task
 
     def run_episode(self):
+        if self.quit_requested:  # q in the arrangement menu
+            return 'skipped'
         try:
             return super().run_episode()
         except Quit:
