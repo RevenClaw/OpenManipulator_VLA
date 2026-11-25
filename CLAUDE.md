@@ -15,7 +15,7 @@ Read `docs/` before changing behaviour. It is the record of what was changed and
 - `docs/input_needed.md` — how a VLA node sends end-effector goals to `ee_commander` via `/ee_goal`, and the limits of that path
 - `docs/custom_commands_guide.md` — quick list of the day-to-day commands (robot launch, bridge, pipeline test §10, recorded demos §11)
 - `docs/finetuning_procedure.md` — exact step-by-step procedure: scripted YOLO demos → dataset → π0.5 fine-tune (section 6 = pipeline test)
-- `docs/policy_runs.md` — log of every run of the fine-tuned policy on the arm (settings, result, our insight, Claude's insight) + how to record a run (bag + video)
+- `docs/policy_runs.md` — log of every run of the fine-tuned policy on the arm (settings, result, our insight, Claude's insight) + how to record a run (bag + video); `trajectory_compare` (record/plot, pure part `trajectory_tools.py`) = divergence of each checkpoint from the scripted YOLO run
 
 Keep these docs updated when behaviour changes (the user expects it; issue #6 is about docs drifting).
 

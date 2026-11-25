@@ -43,6 +43,9 @@ One row per run of the fine-tuned policy through `vla_bridge`. Newest last.
 - **Smoothness (user's trials):** less smooth than the scripted min-jerk motion. Likely from chunk replacement (~5 of 10 steps executed,
   then a new chunk; no blending), 30 → 15 Hz action downsampling, and the speed caps. Candidate fix: temporal ensembling of overlapping chunks.
 
+- **Bin instruction not followed (blue_blue_1, 2026-11-25):** all checkpoints grasp the right cube but release it in the green bin
+  instead of the blue one; see "Checkpoint divergence" below.
+
 ## Recording a run
 Inside the container, besides the arm, `zenohd`, cameras and the SSH tunnel:
 
@@ -68,3 +71,75 @@ label `s` / `f` (`d` = discard) → the recorder moves the arm back to READY by 
 ros2 run custom_package export_episode_video /workspace/recordings/policy_runs
 ```
 Then add the row here (or paste the run number + outcome to Claude, who adds the row and the insight).
+
+## Checkpoint divergence: policy vs. the YOLO pipeline (same command, same cube position)
+`trajectory_compare` logs the fingertip path (from `/joint_states`) of each run and compares every checkpoint with the scripted YOLO
+run, which is the "correct" trajectory. Output per session in `/workspace/recordings/trajectory_compare/<session>/`:
+`divergence.png` (top view, side view, deviation over the run, bars per checkpoint) and `metrics.md` / `metrics.csv`:
+mean and max deviation from the reference path, DTW distance, grasp and release point error (cm), duration, RMS jerk (smoothness).
+
+Once: rebuild (`colcon build --symlink-install --packages-select custom_package && source install/setup.bash`). Mark the cube's spot
+on the table with tape: **every run of a session starts with the cube there and the arm at READY**.
+
+1. **Reference (YOLO pipeline).** T_rec: `ros2 run custom_package trajectory_compare record --session blue_red_1 --label yolo
+   --prompt "pick up the blue cube and place it in the red bin" --cube "0.13 -0.03"` (example: use your session's command) → ENTER. T_demo (camera with depth + detector
+   running, i.e. `pick_place_test.launch.py`): `ros2 run custom_package guided_demo --ros-args --params-file
+   $(ros2 pkg prefix custom_package)/share/custom_package/config/guided_demo.yaml -p arrangement:=free -p record:=false` → pick the
+   blue cube and the red bin. After the release: ENTER in T_rec. Put the cube back on its mark, arm at READY.
+2. **Each checkpoint** (5000, then 15000, then 25000). On the A30, serve that checkpoint
+   (`--policy.dir=checkpoints/pi05_omx_lora_pick_place_2cam/pick_place_2cam_v1/<N>`); restart the bridge (it loses the connection when
+   the server restarts). T_rec: `... record --session blue_red_1 --label ckpt<N> ...` → ENTER; bridge `e`; after the release (or a
+   clear failure) bridge `d`, ENTER in T_rec. Cube back on its mark, arm to READY (`joint_commander` → `0 -14.6 -8.7 93.3 1`).
+3. **Plot:** `ros2 run custom_package trajectory_compare plot --session blue_red_1`. Repeat a label for a second try
+   (saved as `ckpt5000_2`); use a new session for another command or cube position.
+
+### Results
+**Session `blue_blue_1` (2026-11-25), command: blue cube → blue bin, cube at (0.13, −0.03).**
+- Policy runs: bridge started with `-p prompt:="pick up the blue cube and place it in the blue bin"` (exactly a training prompt; 6 demos of
+  this command in `pick_place_2cam`).
+- YOLO reference: `guided_demo` with the blue cube and the blue bin (tag 18).
+
+Reference `yolo_2`;
+`yolo`, `ckpt5000`, `ckpt15000` were false starts (3.7–11.7 s, no grasp) and are excluded:
+`trajectory_compare plot --session blue_blue_1 --ref yolo_2 --exclude yolo,ckpt5000,ckpt15000`.
+
+| Run | Mean dev. (cm) | Max dev. (cm) | DTW (cm) | Grasp error (cm) | Release error (cm) | Duration (s) | RMS jerk (m/s³) | Released in |
+|---|---|---|---|---|---|---|---|---|
+| yolo_2 (reference) | – | – | – | – | – | 16.8 | 7.88 | blue bin (0.173, +0.125) ✅ |
+| ckpt5000_2 | 3.3 | 9.2 | 4.5 | 0.9 | 14.7 | 22.6 | 12.78 | **green bin** (0.196, −0.020) |
+| ckpt15000_2 | 3.1 | 8.8 | 4.8 | 1.4 | 14.7 | 16.1 | 12.72 | **green bin** (0.197, −0.020) |
+| ckpt25000 | 3.3 | 9.3 | 5.0 | 1.5 | 14.8 | 18.5 | 12.03 | **green bin** (0.202, −0.020) |
+
+![blue_blue_1: paths and divergence per checkpoint](figures/divergence_blue_blue_1.png)
+
+*Top left: top view; the reference (black) swings left to the blue bin, all checkpoints go straight ahead to the green bin. Top right: side view. Bottom left: distance from the reference path over the run: ≤ 2 cm until the grasp (~55 %), then rising to ~9 cm. Bottom right: per-checkpoint metrics.*
+
+Claude's insight: **all three checkpoints grasp the blue cube well (0.9–1.5 cm from the scripted grasp point, gripper 0.72–0.73 = cube
+held) but put it in the green bin**, not the blue one: up to the grasp they stay within ~2 cm of the reference path, then they head
+straight forward to the green bin's tag (0.205, −0.021) while the reference swings left to the blue bin. The language is not grounded for
+the place step: the policy treats the target bin as fixed. Plausible reasons: blue→green has 9 demos, blue→blue only 6; the green bin is
+straight ahead of the grasp (the shortest move); and with 60 episodes the policy keys on the cube more than on the bin words. All
+checkpoints are ~60 % less smooth than the scripted motion (RMS jerk 12.0–12.8 vs 7.9 m/s³). Checkpoint 5000 had the most accurate grasp
+(0.9 cm) but the slowest run (22.6 s). Single runs per checkpoint: repeat before drawing conclusions about the checkpoint ranking.
+
+**What this session tells us (Claude):**
+1. **Two skills, learned to different degrees.** *Where the cube is* (approach and grasp) is learned well: path within ~2 cm of the
+   scripted one, grasp point within 0.9–1.5 cm, cube held. *Which bin the prompt names* is not: 3 of 3 runs released in the wrong bin.
+   The policy uses the language to pick the cube but not the target. Success-rate numbers alone would hide this; the per-phase
+   comparison (grasp error small, release error 14.7 cm) shows exactly which part fails.
+2. **The data explains it better than the checkpoint does.** All checkpoints make the same mistake with nearly identical metrics
+   (mean deviation 3.1–3.3 cm, release error 14.7–14.8 cm), so over-fitting is not the cause of this failure. The training set has
+   9 blue→green demos and 6 blue→blue, and the green bin is straight ahead of where the cube is grasped: the policy falls back on the
+   most frequent and shortest target. Fix candidates: balance the commands in the data (≥ 10 per cube→bin pair), add demos with the same
+   cube position and different bins (so only the words tell the bins apart), or test whether rephrased prompts change anything.
+3. **Smoothness is a setup issue, not a checkpoint issue.** RMS jerk 12.0–12.8 m/s³ for every checkpoint vs 7.9 for the scripted motion
+   (~60 % more jerky). Since it does not change with training length, it points to how chunks are executed (replaced every ~5 steps,
+   no blending) and to the 30 → 15 Hz action rate, not to the model weights. Temporal ensembling in the bridge is the cheapest test.
+4. **Checkpoint 5000** had the most accurate grasp (0.9 cm) but the slowest run (22.6 s vs 16–18 s); one run each, so not conclusive.
+5. **For the self-improvement plan:** the robot's own attempts would label these runs as failures (cube in the wrong bin, which the
+   teacher's place check detects), so the loop can learn from exactly this mistake. It is also a case where adding *successful* own
+   attempts alone would not help unless the policy sometimes picks the right bin: the baseline per command matters (experiment E2).
+
+**Next measurements:** blue → red bin (same cube mark) to see whether the policy also ignores that bin; 2 runs per checkpoint; avoid
+false starts (start `record` only just before the arm moves).
+
