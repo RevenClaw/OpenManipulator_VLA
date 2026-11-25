@@ -18,6 +18,12 @@ Read `docs/` before changing behaviour. It is the record of what was changed and
 
 Keep these docs updated when behaviour changes (the user expects it; issue #6 is about docs drifting).
 
+## BTP report material
+Everything for the BTP report (LaTeX sources in `btp_material/btp_report/`, the Overleaf zip, reference papers, photos, the
+IIIT-Delhi template and sample report in `btp_material/refrence report/`) lives **only** in `btp_material/`, which is
+git-ignored. Write all new report files (drafts, figures, zips, notes) inside that folder, never elsewhere in the repo, and
+never commit it.
+
 ## Repository layout
 - `DynamixelSDK/`, `dynamixel_hardware_interface/`, `dynamixel_interfaces/` — upstream drivers. **Never modify (isolation policy).**
 - `open_manipulator/` — ROBOTIS packages (description, bringup, moveit_config, teleop, gui, …) with local config edits.
