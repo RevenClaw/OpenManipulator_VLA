@@ -38,6 +38,7 @@ setup(
             'guided_demo = custom_package.guided_demo:main',
             'move_test = custom_package.move_test:main',
             'export_episode_video = custom_package.export_episode_video:main',
+            'trajectory_compare = custom_package.trajectory_compare:main',
         ],
     },
 )
