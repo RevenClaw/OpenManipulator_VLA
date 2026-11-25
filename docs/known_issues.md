@@ -259,3 +259,15 @@ deferred. All paths are relative to `open_manipulator/`.
   Sending everything to tag 20 needs an older config or the wrong files: the recording config `scripted_demo.yaml` (no per-colour targets) or
   `object_detector` started with its default `20:bin`. `scripted_demo` now prints a `🗺️ Routing` block at startup (colour → target name → tag id, with a
   warning when the detector's target names don't match the config, or when the camera isn't calibrated), and each plan line shows `[tag N]`.
+
+## 16. Gripper flips close/open on the first live policy run  *(🔧 open 2026-11-25)*
+* **Symptom:** first live run of the two-camera π0.5 policy through `vla_bridge` (prompt "pick up the blue cube and place it in the red
+  bin"): `✊ Gripper close.` immediately followed by `🖐️ Gripper open.`; the user reports the gripper oscillating and stopped the run.
+* **Robot side checked:** the bridge only acts when the model's gripper value crosses the hysteresis (close > 0.6, open < 0.4), so the
+  model asked for both. Observation `(0.019 − q) / 0.029` (0 open .. 1 closed), demo action on `/teleop/action` 0 open .. 1 closed,
+  `pick_place_2cam` recorded after the #15 driver mirror.
+* **Suspects:** (1) the A30 converter / `omx_pi05` encodes the gripper state or action differently from `vla_safety.gripper_metres_to_norm`;
+  (2) the policy closes in the air and corrects; (3) the value hovers near 0.5. Details and next steps: the "OPEN ISSUE" section in
+  `CLAUDE.md`.
+* **Same session:** `min_z` 0.02 m stopped the first descent (`next step goes below min_z`): the table is at z = −0.056 m and the demos
+  grasp at z ≈ −0.0385 m. Run used `-p min_z:=-0.05`; the yaml default is unchanged pending the user's approval.

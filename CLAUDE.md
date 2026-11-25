@@ -24,6 +24,33 @@ IIIT-Delhi template and sample report in `btp_material/refrence report/`) lives 
 git-ignored. Write all new report files (drafts, figures, zips, notes) inside that folder, never elsewhere in the repo, and
 never commit it.
 
+## OPEN ISSUE for the next agent: gripper flips close/open on the first live policy run (known issue #16)
+First live run of the two-camera π0.5 policy (2026-11-25, `vla_bridge`, prompt "pick up the blue cube and place it in the red
+bin", `-p min_z:=-0.05`, per-joint caps `[0.5, 0.3, 0.6, 0.8]`): right after enabling, the bridge printed `✊ Gripper close.` then
+`🖐️ Gripper open.`, and the user stopped it (`d`) and reports the gripper oscillating between open and close.
+- **Already ruled out on the robot side:** the bridge sends a gripper command only when the model's value crosses the hysteresis
+  (`GripperHysteresis` in `vla_safety.py`: close > 0.6, open < 0.4), so the model itself asked for closed, then open. Robot-side
+  conventions agree: `/joint_states` `gripper_left_joint` is +0.019 m open / −0.010 m closed (issue #15 mirror in the driver xacro);
+  the bridge's observation is `(0.019 − q) / 0.029` → 0 open .. 1 closed (`gripper_metres_to_norm`); the demos' action on
+  `/teleop/action` (`scripted_demo.py`, `JointState` name `gripper`) is 0 open .. 1 closed. `pick_place_2cam` was recorded on
+  2026-11-23, after the #15 fix (2026-11-19), so its `/joint_states` gripper is in the stock convention.
+- **Hypotheses, most likely first:**
+  1. The converter on the A30 (`vla_layer`, `shradul@iras-hub:~/vla/openpi/omx_pie0.5/scripts/convert_rosbag_to_lerobot.py`) encodes
+     the gripper **state** or **action** differently from the bridge (metres instead of 0..1, inverted, or another formula), so after
+     closing the model sees a state it never saw in training and reopens. Check the converter and `omx_pi05` against
+     `vla_safety.gripper_metres_to_norm`; `vla_layer/tests/test_bridge_contract.py` is meant to catch this. `vla_layer` is NOT on the
+     robot PC: ask the user to paste the relevant code, or work on the A30.
+  2. The policy closes early (in the air) and corrects itself: ask the user where the gripper was when it closed.
+  3. The model's gripper value hovers near 0.5 and crosses both thresholds; diagnostic only: `-p gripper_close_above:=0.7
+     -p gripper_open_below:=0.2` (hides cause 1 if that is the real one).
+- **Useful diagnostic to add (not yet in the code):** log or publish the model's raw gripper values per chunk (e.g. in
+  `/vla_bridge/status` or a debug topic), so a shadow run shows the value over time without the arm moving.
+- **Related finding, same session:** `min_z` default 0.02 m in `config/vla_bridge.yaml` is wrong for this table (table at
+  z = −0.056 m in the `link1` frame; demos grasp at z ≈ −0.0385), so the safety layer stopped the first descent
+  (`next step goes below min_z`). The run used `-p min_z:=-0.05`; changing the yaml default was proposed to the user, not yet approved.
+- Rules: the user runs the arm and the policy server; ask before any motion. Mark fixes "not yet tested on hardware" in
+  `docs/known_issues.md` (#16) until the user confirms. Remove this section from CLAUDE.md once #16 is resolved.
+
 ## Repository layout
 - `DynamixelSDK/`, `dynamixel_hardware_interface/`, `dynamixel_interfaces/` — upstream drivers. **Never modify (isolation policy).**
 - `open_manipulator/` — ROBOTIS packages (description, bringup, moveit_config, teleop, gui, …) with local config edits.
