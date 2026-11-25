@@ -110,12 +110,19 @@ class GripperHysteresis:
         self.open_below = open_below
         self.closed = closed
 
-    def update(self, g):
-        """Returns True (close) or False (open) when the state changes, else None."""
+    def update(self, g, upcoming=None):
+        """Returns True (close) or False (open) when the state changes, else None.
+
+        `upcoming`: the model's gripper values for the rest of the current chunk (from now on). While closed, the gripper only
+        opens if none of them plans a close (> close_above). The policy plans its close a few steps ahead in every chunk and
+        each new chunk starts again from "open now, close soon"; without this check the gripper flipped close/open at every
+        new chunk while grasping (known issue #16)."""
         if not self.closed and g > self.close_above:
             self.closed = True
             return True
         if self.closed and g < self.open_below:
+            if upcoming is not None and len(upcoming) and float(np.max(upcoming)) > self.close_above:
+                return None  # a close is still planned in this chunk: stay closed
             self.closed = False
             return False
         return None

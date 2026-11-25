@@ -102,6 +102,19 @@ def test_gripper_hysteresis_no_chatter():
         S.GripperHysteresis(close_above=0.4, open_below=0.6)
 
 
+def test_gripper_stays_closed_while_the_chunk_still_plans_a_close():
+    # Replays the first live run (known issue #16): each new chunk says "open now, close in a few steps".
+    h = S.GripperHysteresis(close_above=0.6, open_below=0.4, closed=False)
+    old = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.99, 1.0, 1.0]
+    assert h.update(old[7], upcoming=old[7:]) is True                   # the old chunk reaches its close step
+    new = [0.0, -0.01, -0.01, 0.0, 0.0, 0.0, 0.0, 0.99, 0.98, 0.98]
+    assert h.update(new[2], upcoming=new[2:]) is None and h.closed      # was: open (the flip)
+    release = [1.0, 1.0, 0.98, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    assert h.update(release[2], upcoming=release[2:]) is None           # still closed
+    assert h.update(release[4], upcoming=release[4:]) is False          # no close left in the chunk: opens
+    assert h.update(0.0, upcoming=[]) is None
+
+
 def test_ros_image_conversion():
     h, w = 2, 3
     rgb = np.arange(h * w * 3, dtype=np.uint8).reshape(h, w, 3)

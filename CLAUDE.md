@@ -15,6 +15,7 @@ Read `docs/` before changing behaviour. It is the record of what was changed and
 - `docs/input_needed.md` — how a VLA node sends end-effector goals to `ee_commander` via `/ee_goal`, and the limits of that path
 - `docs/custom_commands_guide.md` — quick list of the day-to-day commands (robot launch, bridge, pipeline test §10, recorded demos §11)
 - `docs/finetuning_procedure.md` — exact step-by-step procedure: scripted YOLO demos → dataset → π0.5 fine-tune (section 6 = pipeline test)
+- `docs/policy_runs.md` — log of every run of the fine-tuned policy on the arm (settings, result, our insight, Claude's insight) + how to record a run (bag + video)
 
 Keep these docs updated when behaviour changes (the user expects it; issue #6 is about docs drifting).
 
@@ -43,8 +44,27 @@ bin", `-p min_z:=-0.05`, per-joint caps `[0.5, 0.3, 0.6, 0.8]`): right after ena
   2. The policy closes early (in the air) and corrects itself: ask the user where the gripper was when it closed.
   3. The model's gripper value hovers near 0.5 and crosses both thresholds; diagnostic only: `-p gripper_close_above:=0.7
      -p gripper_open_below:=0.2` (hides cause 1 if that is the real one).
-- **Useful diagnostic to add (not yet in the code):** log or publish the model's raw gripper values per chunk (e.g. in
-  `/vla_bridge/status` or a debug topic), so a shadow run shows the value over time without the arm moving.
+- **Checked 2026-11-25 against the server repo (`../omx/omx_pie0.5`) and the real bags:** the converter (`omx_pi05/dataset.py`) uses the
+  same formula (`gripper.metres_to_norm`, action taken as-is 0..1), the delta mask keeps the gripper absolute, and the recorded demos
+  are clean: action 0 → 1 once at the grasp, back to 0 at the release; while a cube is held the measured state is only **0.58–0.79**.
+  Failed episodes (incl. the 2 closed-on-nothing ones) are excluded from training, so a fully closed gripper (state ≈ 1.0) **never
+  appears in the training data**. Hypothesis 1 is therefore unlikely; leading explanation: the policy closed where there was no cube
+  (the arm had not been put back to READY after the `min_z` stop, it was left low near the cube), the state became ≈ 1.0 (out of
+  distribution) and the model reopened.
+- **Diagnostic added (not yet tested on hardware):** `-p log_gripper:=true` (also in shadow mode) prints per chunk the measured gripper
+  state, the fingertip z and the model's 10 raw gripper values (`🔎` lines). Next: start from READY, shadow + log, then live + log.
+- **Cause found (2026-11-25, `log_gripper` run from READY):** the model is fine. It plans the close a few steps AHEAD in every
+  chunk (`0.00 … 0.99 1.00`) and each new chunk starts again from "open now, close soon"; the bridge acted on the value at the current
+  step, so it closed at the end of an old chunk and reopened when the next chunk arrived, once per chunk, until the model said 1.0
+  everywhere (then state 0.70 = cube held, as in the demos). **Fix (not yet tested on hardware):** `GripperHysteresis.update(g,
+  upcoming)`: while closed, open only if no remaining step of the current chunk plans a close (> close_above). Test
+  `test_gripper_stays_closed_while_the_chunk_still_plans_a_close` replays the logged values. Next: a live run with `log_gripper`.
+- **Second live run (after the fix):** one close, no flip, but state 0.79 → 0.99 = closed on nothing (cube slipped / missed); the model
+  then froze around z ≈ 0 (fully closed is out of distribution). The policy also goes to z −0.045..−0.048 (demos grasp −0.0425..−0.0347,
+  median −0.038) and the finger edges hit the table. **Change (not yet tested on hardware):** `min_z` default −0.043 in
+  `config/vla_bridge.yaml`, and new `min_z_hold` (default true): at the floor the arm stops there, the bridge stays enabled and the gripper
+  keeps the whole chunk's plan (before: hold + disable, and the gripper plan was cut with the truncated steps). Also seen: the policy
+  sometimes heads to the wrong place (likely overfitting, 60 episodes, checkpoint 25000; compare 15000/20000 on the server).
 - **Related finding, same session:** `min_z` default 0.02 m in `config/vla_bridge.yaml` is wrong for this table (table at
   z = −0.056 m in the `link1` frame; demos grasp at z ≈ −0.0385), so the safety layer stopped the first descent
   (`next step goes below min_z`). The run used `-p min_z:=-0.05`; changing the yaml default was proposed to the user, not yet approved.

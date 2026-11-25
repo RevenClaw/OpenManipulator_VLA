@@ -91,6 +91,8 @@ class VLABridgeNode(Node):
         self.declare_parameter('limit_margin', 0.05)           # rad kept clear of JOINT_LIMITS
         self.declare_parameter('max_start_jump', 0.15)         # rad, chunk rejected if it starts farther away
         self.declare_parameter('min_z', 0.02)                  # m, fingertip height floor (forward kinematics)
+        self.declare_parameter('min_z_hold', True)             # True: at the floor the arm holds and the bridge stays enabled
+                                                               # (the gripper still follows the model); False: hold + disable
         self.declare_parameter('gripper_close_above', 0.6)
         self.declare_parameter('gripper_open_below', 0.4)
         self.declare_parameter('gripper_max_effort', 1.0)
@@ -102,6 +104,7 @@ class VLABridgeNode(Node):
         self.declare_parameter('fake_images', False)           # True: black frames for both views, no cameras needed
         self.declare_parameter('image_reliable_qos', True)     # False only for a camera that publishes best effort
         self.declare_parameter('shadow', False)                # publish to ~/preview only; the arm does not move
+        self.declare_parameter('log_gripper', False)           # print the model's raw gripper values per chunk (known issue #16)
 
         p = self.get_parameter
         self.host = p('server_host').value
@@ -115,6 +118,8 @@ class VLABridgeNode(Node):
         self.margin = float(p('limit_margin').value)
         self.max_start_jump = float(p('max_start_jump').value)
         self.min_z = float(p('min_z').value)
+        self.min_z_hold = bool(p('min_z_hold').value)
+        self.at_floor = False
         self.gripper_max_effort = float(p('gripper_max_effort').value)
         self.joint_state_timeout = float(p('joint_state_timeout').value)
         self.image_timeout = float(p('image_timeout').value)
@@ -124,6 +129,7 @@ class VLABridgeNode(Node):
         topics = {'front': p('front_image_topic').value, 'wrist': p('wrist_image_topic').value}
         self.cameras = {} if self.fake_images else {n: t for n, t in topics.items() if t}  # views with a real camera
         self.shadow = bool(p('shadow').value)
+        self.log_gripper = bool(p('log_gripper').value)
         self.hysteresis = S.GripperHysteresis(
             close_above=float(p('gripper_close_above').value), open_below=float(p('gripper_open_below').value)
         )
@@ -148,11 +154,13 @@ class VLABridgeNode(Node):
         self.client = None              # the worker's WebsocketClientPolicy (closed to abort a stalled request)
         self.plan_times = None          # monotonic times of the steps sent to arm_controller
         self.plan_grip = None
+        self.plan_targets = None        # arm targets actually sent (after the safety layer) and their times
+        self.plan_target_times = None
         self.new_chunk = None           # (t_obs, chunk) from the worker
         self.inflight = False
         self.latency = 0.2              # s, running estimate of the round trip
         self.last_chunk_time = 0.0
-        self.counters = {'chunks': 0, 'holds': 0, 'stale_chunks': 0}
+        self.counters = {'chunks': 0, 'holds': 0, 'stale_chunks': 0, 'floor_holds': 0}
         self.last_fault = ''
         self.request_event = threading.Event()
         self.running = True
@@ -161,6 +169,9 @@ class VLABridgeNode(Node):
         self.traj_pub = self.create_publisher(JointTrajectory, cmd_topic, 10)
         self.marker_pub = self.create_publisher(Marker, '~/preview_path', 10)
         self.status_pub = self.create_publisher(String, '~/status', 10)
+        # What the bridge commands, in the demos' /teleop/action format (joint1..4 rad + "gripper" 0 open .. 1 closed), every
+        # control tick: lets record_episodes record policy runs as episodes the converter can read (-p action_topic:=/vla_bridge/action).
+        self.action_pub = self.create_publisher(JointState, '~/action', 10)
         self.gripper_client = ActionClient(self, GripperCommand, '/gripper_controller/gripper_cmd')
 
         self.create_subscription(JointState, '/joint_states', self.joint_state_callback, 10)
@@ -257,6 +268,7 @@ class VLABridgeNode(Node):
         with self.lock:
             self.hysteresis.closed = self.gripper_norm > 0.5
             self.plan_times = self.plan_grip = None
+            self.plan_targets = self.plan_target_times = None
             self.new_chunk = None
             self.inflight = True  # the first request below; the control loop must not send a second one
         self.worker_fault = ''
@@ -353,6 +365,22 @@ class VLABridgeNode(Node):
     def control_tick(self):
         with self.control_lock:
             self._control_tick()
+            self.publish_action()
+
+    def publish_action(self):
+        """~/action: the commanded arm target and gripper (0/1) now; when disabled, the measured pose (the arm holds)."""
+        with self.lock:
+            joints, gripper = self.joints, self.gripper_norm
+        if joints is None or gripper is None:
+            return
+        q = joints
+        if self.enabled and self.plan_targets is not None and len(self.plan_targets):
+            k = int(np.searchsorted(self.plan_target_times, time.monotonic()))
+            q = self.plan_targets[min(k, len(self.plan_targets) - 1)]
+        closed = self.hysteresis.closed if self.enabled else gripper > 0.5
+        msg = JointState(name=[*ARM_JOINTS, 'gripper'], position=[*map(float, q), 1.0 if closed else 0.0])
+        msg.header.stamp = self.get_clock().now().to_msg()
+        self.action_pub.publish(msg)
 
     def _control_tick(self):
         if not self.enabled:
@@ -384,7 +412,7 @@ class VLABridgeNode(Node):
 
         if self.plan_times is not None and not self.shadow:
             k = min(int(np.searchsorted(self.plan_times, now)), len(self.plan_grip) - 1)
-            close = self.hysteresis.update(self.plan_grip[k])
+            close = self.hysteresis.update(self.plan_grip[k], upcoming=self.plan_grip[k:])
             if close is not None:
                 self.send_gripper(close)
 
@@ -395,6 +423,8 @@ class VLABridgeNode(Node):
         except ValueError as e:
             self.fault(f'bad chunk: {e}')
             return False
+        if self.log_gripper:
+            self.print_gripper_log(chunk, joints)
         k0 = S.first_future_step(t_obs, self.fps, len(chunk), now, self.min_lead)
         if k0 >= len(chunk):
             self.counters['stale_chunks'] += 1  # arrived too late to use; the next one is already requested
@@ -408,15 +438,39 @@ class VLABridgeNode(Node):
         targets = S.clamp_joints(targets, LOWER, UPPER, self.margin)
         targets = S.rate_limit(joints, targets, self.max_vel, np.diff(np.concatenate([[now], times])))
         targets = S.truncate_below_z(targets, forward_kinematics, self.min_z)
-        if len(targets) == 0:
+        if len(targets) == 0 and not self.min_z_hold:
             self.fault(f'next step goes below min_z={self.min_z} m')
             return False
-        times, grip = times[: len(targets)], grip[: len(targets)]
-        self.publish_trajectory(targets, times - now)
+        floor = len(targets) < len(times)
+        if floor and not self.at_floor:
+            print(f'  🧱  Floor reached (min_z={self.min_z} m): the arm stops there, the gripper still follows the model.')
+        self.at_floor = floor
+        if self.min_z_hold:
+            # The arm goes only as far as the floor (or holds if already there); the gripper keeps the whole chunk's plan, so
+            # a close planned at the floor still happens (the model pushing toward the table is the grasp, issue #16).
+            if len(targets):
+                self.publish_trajectory(targets, times[: len(targets)] - now)
+                self.plan_targets, self.plan_target_times = targets, times[: len(targets)]
+            else:
+                self.counters['floor_holds'] += 1
+        else:
+            times, grip = times[: len(targets)], grip[: len(targets)]
+            self.publish_trajectory(targets, times - now)
+            self.plan_targets, self.plan_target_times = targets, times
         self.plan_times, self.plan_grip = times, grip
         self.last_chunk_time = now
         self.counters['chunks'] += 1
         return True
+
+    def print_gripper_log(self, chunk, joints):
+        """Diagnostic (known issue #16): the model's raw gripper values for every step of the chunk, next to the measured
+        gripper state it was given (0 open .. 1 closed) and the fingertip height. Print only; changes nothing."""
+        with self.lock:
+            state = self.gripper_norm
+        z = forward_kinematics(joints)[2]
+        values = ' '.join(f'{g:.2f}' for g in chunk[:, 4])
+        state = 'n/a' if state is None else f'{state:.2f}'
+        print(f'  🔎  gripper state {state} | fingertip z {z:+.3f} m | model: {values}', flush=True)
 
     # ------------------------------------------------------------------ outputs
     def publish_trajectory(self, targets, offsets):
@@ -449,6 +503,7 @@ class VLABridgeNode(Node):
         if joints is not None:
             self.publish_trajectory(joints[None], [0.2])
         self.plan_times = self.plan_grip = None
+        self.plan_targets = self.plan_target_times = None
         self.counters['holds'] += 1
         self.last_fault = reason
 

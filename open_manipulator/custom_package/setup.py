@@ -37,6 +37,7 @@ setup(
             'scripted_demo = custom_package.scripted_demo:main',
             'guided_demo = custom_package.guided_demo:main',
             'move_test = custom_package.move_test:main',
+            'export_episode_video = custom_package.export_episode_video:main',
         ],
     },
 )

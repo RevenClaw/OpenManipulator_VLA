@@ -271,3 +271,15 @@ deferred. All paths are relative to `open_manipulator/`.
   `CLAUDE.md`.
 * **Same session:** `min_z` 0.02 m stopped the first descent (`next step goes below min_z`): the table is at z = −0.056 m and the demos
   grasp at z ≈ −0.0385 m. Run used `-p min_z:=-0.05`; the yaml default is unchanged pending the user's approval.
+* **Checked (2026-11-25):** the server's converter uses the same gripper formula and the recorded demos are clean (close once at the grasp,
+  open at the release; held-cube state 0.58–0.79). Fully closed (≈ 1.0) never occurs in the training data (failed grasps are excluded), so
+  a close on nothing puts the model out of distribution. Leading explanation: the arm was not back at READY (left low after the `min_z` stop),
+  the policy closed beside the cube and reopened. New diagnostic `-p log_gripper:=true` in `vla_bridge` (not yet tested on hardware).
+* **Cause and fix (2026-11-25, not yet tested on hardware):** the `log_gripper` run from READY showed the model planning the close a few
+  steps ahead in every chunk; the bridge closed at the end of an old chunk and reopened at the next chunk's "0.00 now". The grasp itself
+  worked (state 0.70 once the model said 1.0 everywhere). `GripperHysteresis.update(g, upcoming)` now keeps the gripper closed while any
+  remaining step of the current chunk plans a close; regression test in `test/test_vla_safety.py`.
+* **Second live run (2026-11-25):** no flip any more, but the grasp closed on nothing (state 0.99) and the model froze; the policy went to
+  z −0.045..−0.048 and the fingers hit the table (demos grasp at −0.0425..−0.0347). `vla_bridge.yaml`: `min_z` −0.043 (was 0.02) and new
+  `min_z_hold: true` (the arm stops at the floor, bridge stays enabled, gripper keeps the chunk's plan). Not yet tested on hardware.
+
